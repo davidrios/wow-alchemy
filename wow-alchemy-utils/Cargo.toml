@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://docs.rs/wow-alchemy-utils"
+description = "Misc utitilies used in wow-alchemy"
+readme = "README.md"
+keywords = ["wow", "warcraft", "gamedev"]
+categories = ["game-development", "parser-implementations"]
 
 [dependencies]
 custom_debug = { workspace = true }
