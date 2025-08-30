@@ -202,7 +202,6 @@ fn generate_header_rv_enum_reader_body(
     Ok(full_body)
 }
 
-#[derive(Debug)]
 struct WowDataAttrs {
     versioned: bool,
     default: bool,
