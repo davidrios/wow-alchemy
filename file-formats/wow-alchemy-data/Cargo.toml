@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-wow-alchemy-data-derive = { path = "../wow-alchemy-data-derive" }
+wow-alchemy-data-derive = { path = "../wow-alchemy-data-derive", version = "0.1.0" }
 byteorder = { workspace = true }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }

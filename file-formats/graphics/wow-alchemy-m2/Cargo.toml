@@ -14,10 +14,10 @@ keywords = ["wow", "warcraft", "m2", "models", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-wow-alchemy-utils = { path = "../../../wow-alchemy-utils" }
-wow-alchemy-data = { path = "../../wow-alchemy-data" }
-wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive" }
-wow-alchemy-blp = { path = "../wow-alchemy-blp" }
+wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.1.0" }
+wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.1.0" }
+wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.1.0" }
+wow-alchemy-blp = { path = "../wow-alchemy-blp", version = "0.1.0" }
 byteorder = { workspace = true }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
