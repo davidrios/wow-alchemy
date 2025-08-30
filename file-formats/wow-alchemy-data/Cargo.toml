@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://docs.rs/wow-alchemy-data"
+description = "Base data types used in parsing WoW binary formats."
+readme = "README.md"
+keywords = ["wow", "warcraft", "gamedev"]
+categories = ["game-development", "parser-implementations"]
 
 [dependencies]
 wow-alchemy-data-derive = { path = "../wow-alchemy-data-derive", version = "0.1.0" }

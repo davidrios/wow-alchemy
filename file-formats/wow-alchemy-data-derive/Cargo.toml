@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://docs.rs/wow-alchemy-data-derive"
+description = "Macros to automate defining readers and writers for binary formats"
+readme = "README.md"
+keywords = ["wow", "warcraft", "gamedev"]
+categories = ["game-development", "parser-implementations"]
 
 [lib]
 proc-macro = true
