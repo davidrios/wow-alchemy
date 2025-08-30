@@ -6,7 +6,7 @@ A comprehensive Rust library for parsing, editing, validating, and converting Wo
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-wmo)](https://crates.io/crates/wow-wmo)
 [![docs.rs](https://img.shields.io/docsrs/wow-wmo)](https://docs.rs/wow-wmo)
-[![License](https://img.shields.io/crates/l/wow-wmo.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-wmo.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

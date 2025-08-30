@@ -6,7 +6,7 @@ Parser for World of Warcraft DBC (client database) files.
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-cdbc)](https://crates.io/crates/wow-cdbc)
 [![docs.rs](https://img.shields.io/docsrs/wow-cdbc)](https://docs.rs/wow-cdbc)
-[![License](https://img.shields.io/crates/l/wow-cdbc.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-cdbc.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

@@ -25,7 +25,7 @@ cargo install warcraft-rs --features "mpq dbc"
 
 ```bash
 # Clone the repository
-git clone https://github.com/wowemulation-dev/warcraft-rs
+git clone https://github.com/davidrios/warcraft-rs
 cd warcraft-rs/warcraft-rs
 
 # Build with all features
@@ -171,5 +171,5 @@ warcraft-rs m2 info character.m2
 
 ## Development
 
-See the main [warcraft-rs](https://github.com/wowemulation-dev/warcraft-rs) repository
+See the main [warcraft-rs](https://github.com/davidrios/warcraft-rs) repository
 for development information.

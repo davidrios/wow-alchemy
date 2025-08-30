@@ -6,7 +6,7 @@ A library for parsing, validating, and converting World of Warcraft WDT (World D
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-wdt)](https://crates.io/crates/wow-wdt)
 [![docs.rs](https://img.shields.io/docsrs/wow-wdt)](https://docs.rs/wow-wdt)
-[![License](https://img.shields.io/crates/l/wow-mpq.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-mpq.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

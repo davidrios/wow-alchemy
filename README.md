@@ -23,10 +23,10 @@ Pre-built binaries are available for Linux, macOS, and Windows:
 
 ```bash
 # Unix/Linux/macOS
-curl -fsSL https://raw.githubusercontent.com/wowemulation-dev/warcraft-rs/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidrios/warcraft-rs/main/install.sh | bash
 
 # Windows PowerShell
-irm https://raw.githubusercontent.com/wowemulation-dev/warcraft-rs/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/davidrios/warcraft-rs/main/install.ps1 | iex
 ```
 
 ### From crates.io
@@ -42,7 +42,7 @@ cargo add wow-mpq wow-blp wow-adt
 ### Build from source
 
 ```bash
-git clone https://github.com/wowemulation-dev/warcraft-rs
+git clone https://github.com/davidrios/warcraft-rs
 cd warcraft-rs
 cargo install --path warcraft-rs
 ```

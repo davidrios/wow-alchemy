@@ -7,7 +7,7 @@ data for continents.
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-wdl)](https://crates.io/crates/wow-wdl)
 [![docs.rs](https://img.shields.io/docsrs/wow-wdl)](https://docs.rs/wow-wdl)
-[![License](https://img.shields.io/crates/l/wow-wdl.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-wdl.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

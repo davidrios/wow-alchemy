@@ -6,7 +6,7 @@ A Rust library for parsing, validating, and converting World of Warcraft M2 mode
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-m2)](https://crates.io/crates/wow-m2)
 [![docs.rs](https://img.shields.io/docsrs/wow-m2)](https://docs.rs/wow-m2)
-[![License](https://img.shields.io/crates/l/wow-mpq.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-mpq.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

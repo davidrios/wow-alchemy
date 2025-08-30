@@ -6,7 +6,7 @@ Parser for World of Warcraft ADT (terrain) files.
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-adt)](https://crates.io/crates/wow-adt)
 [![docs.rs](https://img.shields.io/docsrs/wow-adt)](https://docs.rs/wow-adt)
-[![License](https://img.shields.io/crates/l/wow-adt.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-adt.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 

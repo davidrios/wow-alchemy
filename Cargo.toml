@@ -35,8 +35,8 @@ authors = ["David Rios <david.rios.gomes@gmail.com>", "Daniel S. Reichenbach <da
 edition = "2024"
 rust-version = "1.86"
 license = "Apache-2.0"
-repository = "https://github.com/wowemulation-dev/warcraft-rs"
-homepage = "https://github.com/wowemulation-dev/warcraft-rs"
+repository = "https://github.com/davidrios/warcraft-rs"
+homepage = "https://github.com/davidrios/warcraft-rs"
 
 [workspace.dependencies]
 # Error handling

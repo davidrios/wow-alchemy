@@ -6,7 +6,7 @@ Parser and encoder for Blizzard BLP texture files used in Warcraft III and World
 
 [![Crates.io Version](https://img.shields.io/crates/v/wow-blp)](https://crates.io/crates/wow-blp)
 [![docs.rs](https://img.shields.io/docsrs/wow-blp)](https://docs.rs/wow-blp)
-[![License](https://img.shields.io/crates/l/wow-blp.svg)](https://github.com/wowemulation-dev/warcraft-rs#license)
+[![License](https://img.shields.io/crates/l/wow-blp.svg)](https://github.com/davidrios/warcraft-rs#license)
 
 </div>
 
