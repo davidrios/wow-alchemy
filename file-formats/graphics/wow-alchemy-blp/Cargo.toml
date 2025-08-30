@@ -14,7 +14,7 @@ keywords = ["wow", "warcraft", "blp", "texture", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-wow-alchemy-utils = { path = "../../../wow-alchemy-utils" }
+wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.1.0" }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
