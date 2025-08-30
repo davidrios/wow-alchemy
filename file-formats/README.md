@@ -7,26 +7,19 @@ Warcraft, organized by category.
 
 ```text
 file-formats/
-├── archives/      # Archive formats
-│   └── wow-mpq    # MPQ (Mike O'Brien Pack) archives
 ├── world-data/    # World and terrain data
-│   ├── wow-adt    # ADT (Terrain) files
-│   ├── wow-wdl    # WDL (Low-resolution world maps)
-│   └── wow-wdt    # WDT (World map definitions)
+│   ├── wow-alchemy-adt    # ADT (Terrain) files
+│   ├── wow-alchemy-wdl    # WDL (Low-resolution world maps)
+│   └── wow-alchemy-wdt    # WDT (World map definitions)
 ├── graphics/      # Graphics and model formats
-│   ├── wow-blp    # BLP (Texture) files
-│   ├── wow-m2     # M2 (Model) files
-│   └── wow-wmo    # WMO (World Map Object) files
+│   ├── wow-alchemy-blp    # BLP (Texture) files
+│   ├── wow-alchemy-m2     # M2 (Model) files
+│   └── wow-alchemy-wmo    # WMO (World Map Object) files
 └── database/      # Game data storage
-    └── wow-cdbc   # cDBC (Database Client) files
+    └── wow-alchemy-cdbc   # cDBC (Database Client) files
 ```
 
 ## Format Categories
-
-### Archives
-
-- **MPQ** - The primary archive format used by World of Warcraft for
-  storing game assets
 
 ### World Data
 
@@ -50,9 +43,8 @@ Each crate can be used independently:
 
 ```toml
 [dependencies]
-wow-mpq = { path = "file-formats/archives/wow-mpq" }
-wow-cdbc = { path = "file-formats/database/wow-cdbc" }
-wow-blp = { path = "file-formats/graphics/wow-blp" }
+wow-alchemy-cdbc = { path = "file-formats/database/wow-alchemy-cdbc" }
+wow-alchemy-blp = { path = "file-formats/graphics/wow-alchemy-blp" }
 ```
 
 ## Documentation

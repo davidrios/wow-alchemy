@@ -1,0 +1,16 @@
+[package]
+name = "wow-alchemy-data"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+wow-alchemy-data-derive = { path = "../wow-alchemy-data-derive" }
+byteorder = { workspace = true }
+custom_debug = { workspace = true }
+thiserror = { workspace = true }
+glam = { workspace = true }

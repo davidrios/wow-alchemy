@@ -78,13 +78,13 @@ jobs:
       - name: Build with cross for ${{ matrix.target }}
         if: matrix.cross
         run: |
-          cross build --target ${{ matrix.target }} --release --bin warcraft-rs
+          cross build --target ${{ matrix.target }} --release --bin wow-alchemy
 
       # Build natively
       - name: Build natively for ${{ matrix.target }}
         if: '!matrix.cross'
         run: |
-          cargo build --target ${{ matrix.target }} --release --bin warcraft-rs
+          cargo build --target ${{ matrix.target }} --release --bin wow-alchemy
 
       # Test build artifacts exist
       - name: Verify build artifacts exist
@@ -93,7 +93,7 @@ jobs:
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             ls -la target/${{ matrix.target }}/release/*.exe || true
           else
-            ls -la target/${{ matrix.target }}/release/warcraft-rs || true
+            ls -la target/${{ matrix.target }}/release/wow-alchemy || true
           fi
 
       # Upload artifacts
@@ -102,5 +102,5 @@ jobs:
         with:
           name: build-${{ matrix.target }}
           path: |
-            target/${{ matrix.target }}/release/warcraft-rs*
+            target/${{ matrix.target }}/release/wow-alchemy*
           if-no-files-found: error

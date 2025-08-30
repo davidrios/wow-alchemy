@@ -5,7 +5,7 @@ on:
   push:
     tags:
       - 'v[0-9]+.*'
-      - 'warcraft-rs-v[0-9]+.*'
+      - 'wow-alchemy-v[0-9]+.*'
 
   workflow_dispatch:
     inputs:
@@ -70,8 +70,8 @@ jobs:
           else
             # Parse tag to determine release type
             TAG="${GITHUB_REF#refs/tags/}"
-            if [[ "$TAG" == warcraft-rs-v* ]]; then
-              VERSION="${TAG#warcraft-rs-v}"
+            if [[ "$TAG" == wow-alchemy-v* ]]; then
+              VERSION="${TAG#wow-alchemy-v}"
               RELEASE_TYPE="cli"
             elif [[ "$TAG" == libs-v* ]]; then
               VERSION="${TAG#libs-v}"
@@ -106,7 +106,7 @@ jobs:
               echo "::notice::Releasing CLI only for v$VERSION"
               ;;
           esac
-          
+
           if [[ "$DRY_RUN" == "true" ]]; then
             echo "::warning::DRY RUN MODE - No actual publishing will occur"
           fi
@@ -132,7 +132,7 @@ jobs:
       - name: Verify versions match
         run: |
           VERSION="${{ needs.determine-release-type.outputs.version }}"
-          for crate in wow-mpq wow-adt wow-wdl wow-wdt wow-blp wow-m2 wow-wmo wow-cdbc warcraft-rs; do
+          for crate in wow-alchemy-adt wow-alchemy-wdl wow-alchemy-wdt wow-alchemy-blp wow-alchemy-m2 wow-alchemy-wmo wow-alchemy-cdbc wow-alchemy; do
             CRATE_VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r ".packages[] | select(.name == \"$crate\") | .version")
             if [[ "$CRATE_VERSION" != "$VERSION" ]]; then
               echo "Version mismatch for $crate: expected $VERSION, found $CRATE_VERSION"
@@ -148,79 +148,76 @@ jobs:
         if: needs.determine-release-type.outputs.dry-run == 'true'
         run: |
           echo "::warning::DRY RUN MODE - Would publish these packages in dependency order:"
-          echo "1. First batch (no workspace deps): wow-mpq, wow-blp, wow-cdbc, wow-wdl, wow-wdt, wow-adt, wow-wmo"
-          echo "2. Second batch (depends on wow-blp): wow-m2"
-          echo "3. CLI (depends on all others): warcraft-rs"
+          echo "1. First batch (no workspace deps): wow-alchemy-blp, wow-alchemy-cdbc, wow-alchemy-wdl, wow-alchemy-wdt, wow-alchemy-adt, wow-alchemy-wmo"
+          echo "2. Second batch (depends on wow-alchemy-blp): wow-alchemy-m2"
+          echo "3. CLI (depends on all others): wow-alchemy"
           echo "::notice::No actual publishing performed"
-          
+
       - name: Publish to crates.io (Production)
         if: needs.determine-release-type.outputs.dry-run != 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
           echo "::notice::Publishing packages to crates.io in dependency order..."
-          
+
           # First batch: Independent crates (can be published in parallel)
           echo "::group::Publishing independent crates"
-          cargo publish -p wow-mpq &
-          cargo publish -p wow-blp &
-          cargo publish -p wow-cdbc &
-          cargo publish -p wow-wdl &
-          cargo publish -p wow-wdt &
-          cargo publish -p wow-adt &
-          cargo publish -p wow-wmo &
+          cargo publish -p wow-alchemy-blp &
+          cargo publish -p wow-alchemy-cdbc &
+          cargo publish -p wow-alchemy-wdl &
+          cargo publish -p wow-alchemy-wdt &
+          cargo publish -p wow-alchemy-adt &
+          cargo publish -p wow-alchemy-wmo &
           wait  # Wait for all parallel publishes to complete
           echo "::endgroup::"
-          
+
           # Wait for crates.io to index the first batch
           echo "::notice::Waiting for crates.io to index first batch..."
           sleep 60
-          
+
           # Second batch: Crates that depend on first batch
           echo "::group::Publishing dependent crates"
-          cargo publish -p wow-m2  # Depends on wow-blp
+          cargo publish -p wow-alchemy-m2  # Depends on wow-alchemy-blp
           echo "::endgroup::"
-          
+
           # Wait for crates.io to index second batch
           echo "::notice::Waiting for crates.io to index second batch..."
           sleep 60
-          
+
           # Third batch: CLI crate (depends on all others)
           echo "::group::Publishing CLI crate"
-          cargo publish -p warcraft-rs  # Depends on all other workspace crates
+          cargo publish -p wow-alchemy  # Depends on all other workspace crates
           echo "::endgroup::"
-          
+
           echo "::notice::All packages published successfully!"
 
       - name: Create library release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.determine-release-type.outputs.version }}
-          name: warcraft-rs libraries v${{ needs.determine-release-type.outputs.version }}
+          name: wow-alchemy libraries v${{ needs.determine-release-type.outputs.version }}
           body: |
             ## Library Release v${{ needs.determine-release-type.outputs.version }}
 
-            This release includes updates to all warcraft-rs libraries:
-            - wow-mpq - MPQ archive support
-            - wow-blp - BLP texture support
-            - wow-m2 - M2 model support
-            - wow-wmo - WMO world map object support
-            - wow-adt - ADT terrain support
-            - wow-wdl - WDL low-resolution terrain support
-            - wow-wdt - WDT map support
-            - wow-cdbc - cDBC database support
+            This release includes updates to all wow-alchemy libraries:
+            - wow-alchemy-blp - BLP texture support
+            - wow-alchemy-m2 - M2 model support
+            - wow-alchemy-wmo - WMO world map object support
+            - wow-alchemy-adt - ADT terrain support
+            - wow-alchemy-wdl - WDL low-resolution terrain support
+            - wow-alchemy-wdt - WDT map support
+            - wow-alchemy-cdbc - cDBC database support
 
             ### Installation
 
             Add to your `Cargo.toml`:
             ```toml
             [dependencies]
-            wow-mpq = "${{ needs.determine-release-type.outputs.version }}"
-            wow-blp = "${{ needs.determine-release-type.outputs.version }}"
+            wow-alchemy-blp = "${{ needs.determine-release-type.outputs.version }}"
             # ... other crates as needed
             ```
 
-            See the [CHANGELOG](https://github.com/wowemulation-dev/warcraft-rs/blob/main/CHANGELOG.md) for details.
+            See the [CHANGELOG](https://github.com/davidrios/wow-alchemy/blob/main/CHANGELOG.md) for details.
 
   # Release CLI binaries
   release-cli:
@@ -245,17 +242,17 @@ jobs:
           echo "Release type determination: ${{ needs.determine-release-type.result }}"
           echo "Library release: ${{ needs.release-libraries.result }}"
           echo "CLI release: ${{ needs.release-cli.result }}"
-          
+
           # Check if any required job failed
           if [[ "${{ needs.determine-release-type.outputs.release-libraries }}" == "true" ]] && [[ "${{ needs.release-libraries.result }}" != "success" ]]; then
             echo "Library release failed"
             exit 1
           fi
-          
+
           if [[ "${{ needs.determine-release-type.outputs.release-cli }}" == "true" ]] && [[ "${{ needs.release-cli.result }}" != "success" ]]; then
             echo "CLI release failed"
             exit 1
           fi
-          
+
           echo "All releases completed successfully!"
 

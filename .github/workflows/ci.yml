@@ -48,16 +48,14 @@ jobs:
           files: |
             Cargo.toml
             Cargo.lock
-            file-formats/archives/wow-mpq/**
-            file-formats/world-data/wow-adt/**
-            file-formats/world-data/wow-wdl/**
-            file-formats/world-data/wow-wdt/**
-            file-formats/graphics/wow-blp/**
-            file-formats/graphics/wow-m2/**
-            file-formats/graphics/wow-wmo/**
-            file-formats/database/wow-cdbc/**
-            warcraft-rs/**
-            ffi/**
+            file-formats/world-data/wow-alchemy-adt/**
+            file-formats/world-data/wow-alchemy-wdl/**
+            file-formats/world-data/wow-alchemy-wdt/**
+            file-formats/graphics/wow-alchemy-blp/**
+            file-formats/graphics/wow-alchemy-m2/**
+            file-formats/graphics/wow-alchemy-wmo/**
+            file-formats/database/wow-alchemy-cdbc/**
+            wow-alchemy/**
           files_ignore: |
             **/*.md
             **/*.txt
@@ -70,7 +68,7 @@ jobs:
           ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         run: |
           echo "Changed files: $ALL_CHANGED_FILES"
-          
+
           # If no files changed, we still need to run tests (e.g., scheduled runs)
           if [ -z "$ALL_CHANGED_FILES" ]; then
             echo "No files changed, will test all crates"
@@ -78,10 +76,10 @@ jobs:
             echo "crates_changed=" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Detect which crates changed
           crates_changed=""
-          
+
           # Check if root Cargo.toml or Cargo.lock changed (affects all crates)
           if echo "$ALL_CHANGED_FILES" | grep -E "^Cargo\.(toml|lock)$"; then
             echo "Root Cargo files changed, will test all crates"
@@ -89,14 +87,14 @@ jobs:
             echo "crates_changed=" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Check individual crate changes
-          for crate in wow-mpq wow-adt wow-wdl wow-wdt wow-blp wow-m2 wow-wmo wow-cdbc warcraft-rs; do
+          for crate in wow-alchemy-mpq wow-alchemy-adt wow-alchemy-wdl wow-alchemy-wdt wow-alchemy-blp wow-alchemy-m2 wow-alchemy-wmo wow-alchemy-cdbc wow-alchemy; do
             if echo "$ALL_CHANGED_FILES" | grep -E "$crate/"; then
               crates_changed="$crates_changed $crate"
             fi
           done
-          
+
           # Remove leading space and output
           crates_changed=$(echo $crates_changed | xargs)
           if [ -n "$crates_changed" ]; then

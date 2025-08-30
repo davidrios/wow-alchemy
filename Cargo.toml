@@ -1,31 +1,25 @@
 [workspace]
 members = [
   # Utils
-  "file-formats/wow-data",
-  "file-formats/wow-data-derive",
-  "wow-utils",
-
-  # Archives
-  "file-formats/archives/wow-mpq",
+  "file-formats/wow-alchemy-data",
+  "file-formats/wow-alchemy-data-derive",
+  "wow-alchemy-utils",
 
   # World Data
-  "file-formats/world-data/wow-adt",
-  "file-formats/world-data/wow-wdl",
-  "file-formats/world-data/wow-wdt",
+  "file-formats/world-data/wow-alchemy-adt",
+  "file-formats/world-data/wow-alchemy-wdl",
+  "file-formats/world-data/wow-alchemy-wdt",
 
   # Graphics
-  "file-formats/graphics/wow-blp",
-  "file-formats/graphics/wow-m2",
-  "file-formats/graphics/wow-wmo",
+  "file-formats/graphics/wow-alchemy-blp",
+  "file-formats/graphics/wow-alchemy-m2",
+  "file-formats/graphics/wow-alchemy-wmo",
 
   # Database
-  "file-formats/database/wow-cdbc",
-
-  # FFI
-  "ffi/storm-ffi",
+  "file-formats/database/wow-alchemy-cdbc",
 
   # CLI
-  "warcraft-rs",
+  "wow-alchemy",
 ]
 resolver = "2"
 
@@ -35,8 +29,8 @@ authors = ["David Rios <david.rios.gomes@gmail.com>", "Daniel S. Reichenbach <da
 edition = "2024"
 rust-version = "1.86"
 license = "Apache-2.0"
-repository = "https://github.com/davidrios/warcraft-rs"
-homepage = "https://github.com/davidrios/warcraft-rs"
+repository = "https://github.com/davidrios/wow-alchemy"
+homepage = "https://github.com/davidrios/wow-alchemy"
 
 [workspace.dependencies]
 # Error handling
@@ -70,9 +64,6 @@ csv = "1.3"
 clap = { version = "4.5", features = ["derive"] }
 colored = "3.0"
 indicatif = "0.17"
-
-# FFI
-libc = "0.2.172"
 
 # Development
 criterion = { version = "0.6", features = ["html_reports"] }
