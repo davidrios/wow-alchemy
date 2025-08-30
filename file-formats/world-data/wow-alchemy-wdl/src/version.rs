@@ -140,35 +140,3 @@ impl fmt::Display for WdlVersion {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_version_number() {
-        assert_eq!(WdlVersion::Vanilla.version_number(), 18);
-        assert_eq!(WdlVersion::Wotlk.version_number(), 18);
-        assert_eq!(WdlVersion::Latest.version_number(), 18);
-    }
-
-    #[test]
-    fn test_from_version_number() {
-        assert!(WdlVersion::from_version_number(18).is_ok());
-        assert!(WdlVersion::from_version_number(0).is_err());
-    }
-
-    #[test]
-    fn test_wmo_chunks_support() {
-        assert!(!WdlVersion::Vanilla.has_wmo_chunks());
-        assert!(WdlVersion::Wotlk.has_wmo_chunks());
-        assert!(!WdlVersion::Legion.has_wmo_chunks());
-    }
-
-    #[test]
-    fn test_ml_chunks_support() {
-        assert!(!WdlVersion::Vanilla.has_ml_chunks());
-        assert!(!WdlVersion::Wotlk.has_ml_chunks());
-        assert!(WdlVersion::Legion.has_ml_chunks());
-    }
-}

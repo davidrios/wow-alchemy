@@ -71,6 +71,3 @@ impl std::fmt::Display for MD20Version {
 }
 
 impl DataVersion for MD20Version {}
-
-#[cfg(test)]
-mod tests {}

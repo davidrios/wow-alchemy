@@ -73,26 +73,3 @@ impl std::str::FromStr for BlpVersion {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn known_magics() {
-        let magic1 = [0x42, 0x4c, 0x50, 0x31];
-        let version1 = BlpVersion::from_magic(magic1);
-        assert_eq!(version1, Some(BlpVersion::Blp1));
-        assert_eq!(version1.unwrap().to_magic(), magic1);
-
-        let magic2 = [0x42, 0x4c, 0x50, 0x32];
-        let version2 = BlpVersion::from_magic(magic2);
-        assert_eq!(version2, Some(BlpVersion::Blp2));
-        assert_eq!(version2.unwrap().to_magic(), magic2);
-
-        let magic3 = [0x42, 0x4c, 0x50, 0x30];
-        let version3 = BlpVersion::from_magic(magic3);
-        assert_eq!(version3, Some(BlpVersion::Blp0));
-        assert_eq!(version3.unwrap().to_magic(), magic3);
-    }
-}

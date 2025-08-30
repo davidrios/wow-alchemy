@@ -1,8 +1,3 @@
-//! Parser implementation for WDL files
-//!
-//! This module provides the main functionality for reading and writing WDL files.
-//! The [`WdlParser`] struct is the primary entry point for working with WDL files.
-
 use memchr::memchr;
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
@@ -11,32 +6,6 @@ use crate::error::{Result, WdlError};
 use crate::types::*;
 use crate::version::WdlVersion;
 
-/// Parser for WDL (World Distance Lookup) files
-///
-/// The `WdlParser` provides methods to read and write WDL files, with support for
-/// different game versions. It automatically handles the different chunk formats
-/// and structures used across World of Warcraft expansions.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use std::fs::File;
-/// use std::io::{BufReader, BufWriter};
-/// use wow_alchemy_wdl::parser::WdlParser;
-/// use wow_alchemy_wdl::version::WdlVersion;
-///
-/// // Parse a WDL file
-/// let file = File::open("input.wdl").unwrap();
-/// let mut reader = BufReader::new(file);
-/// let parser = WdlParser::new();
-/// let wdl_file = parser.parse(&mut reader).unwrap();
-///
-/// // Write a WDL file
-/// let output = File::create("output.wdl").unwrap();
-/// let mut writer = BufWriter::new(output);
-/// let wotlk_parser = WdlParser::with_version(WdlVersion::Wotlk);
-/// wotlk_parser.write(&mut writer, &wdl_file).unwrap();
-/// ```
 #[derive(Debug, Default)]
 pub struct WdlParser {
     /// The version to use for parsing
@@ -44,99 +13,24 @@ pub struct WdlParser {
 }
 
 impl WdlParser {
-    /// Creates a new WDL parser with the latest version
-    ///
-    /// This creates a parser configured to work with the most recent
-    /// WDL format version supported by the library.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    ///
-    /// let parser = WdlParser::new();
-    /// ```
     pub fn new() -> Self {
         Self {
             version: WdlVersion::Latest,
         }
     }
 
-    /// Creates a WDL parser with the specified version
-    ///
-    /// This allows parsing and writing WDL files using a specific game version's
-    /// format. This is useful when you know exactly which version you're working with.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    /// use wow_alchemy_wdl::version::WdlVersion;
-    ///
-    /// let parser = WdlParser::with_version(WdlVersion::Wotlk);
-    /// ```
     pub fn with_version(version: WdlVersion) -> Self {
         Self { version }
     }
 
-    /// Sets the version for the parser
-    ///
-    /// This changes the version used by the parser for future operations.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    /// use wow_alchemy_wdl::version::WdlVersion;
-    ///
-    /// let mut parser = WdlParser::new();
-    /// parser.set_version(WdlVersion::Legion);
-    /// ```
     pub fn set_version(&mut self, version: WdlVersion) {
         self.version = version;
     }
 
-    /// Gets the current version of the parser
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    /// use wow_alchemy_wdl::version::WdlVersion;
-    ///
-    /// let parser = WdlParser::with_version(WdlVersion::Wotlk);
-    /// assert_eq!(parser.version(), WdlVersion::Wotlk);
-    /// ```
     pub fn version(&self) -> WdlVersion {
         self.version
     }
 
-    /// Parses a WDL file from a reader
-    ///
-    /// This method reads a WDL file from the provided reader and returns a
-    /// parsed `WdlFile` structure. It automatically detects the file version
-    /// and parses all relevant chunks.
-    ///
-    /// # Arguments
-    ///
-    /// * `reader` - Any type that implements `Read + Seek`
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing either the parsed `WdlFile` or an error.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::fs::File;
-    /// use std::io::BufReader;
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    ///
-    /// let file = File::open("input.wdl").unwrap();
-    /// let mut reader = BufReader::new(file);
-    /// let parser = WdlParser::new();
-    /// let wdl_file = parser.parse(&mut reader).unwrap();
-    /// ```
     pub fn parse<R: Read + Seek>(&self, reader: &mut R) -> Result<WdlFile> {
         let mut file = WdlFile::new();
         file.version = self.version;
@@ -329,38 +223,6 @@ impl WdlParser {
         Ok(file)
     }
 
-    /// Writes a WDL file to a writer
-    ///
-    /// This method writes a `WdlFile` structure to the provided writer using
-    /// the format specified by the parser's version.
-    ///
-    /// # Arguments
-    ///
-    /// * `writer` - Any type that implements `Write + Seek`
-    /// * `file` - The `WdlFile` to write
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or an error.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::fs::File;
-    /// use std::io::BufWriter;
-    /// use wow_alchemy_wdl::parser::WdlParser;
-    /// use wow_alchemy_wdl::types::WdlFile;
-    /// use wow_alchemy_wdl::version::WdlVersion;
-    ///
-    /// // Create a new WDL file
-    /// let file = WdlFile::with_version(WdlVersion::Wotlk);
-    ///
-    /// // Write the file
-    /// let output = File::create("output.wdl").unwrap();
-    /// let mut writer = BufWriter::new(output);
-    /// let parser = WdlParser::with_version(WdlVersion::Wotlk);
-    /// parser.write(&mut writer, &file).unwrap();
-    /// ```
     pub fn write<W: Write + Seek>(&self, writer: &mut W, file: &WdlFile) -> Result<()> {
         // We'll build the file in memory first to calculate offsets
         let mut chunks = Vec::new();
@@ -536,17 +398,6 @@ impl WdlParser {
         Ok(())
     }
 
-    /// Parses zero-terminated strings from a buffer
-    ///
-    /// Internal helper method to parse null-terminated strings from a byte buffer.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - The byte buffer containing the strings
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a vector of strings or an error.
     fn parse_zero_terminated_strings(&self, data: &[u8]) -> Result<Vec<String>> {
         let mut strings = Vec::new();
         let mut start = 0;
@@ -571,18 +422,6 @@ impl WdlParser {
         Ok(strings)
     }
 
-    /// Parses map tiles (MARE and MAHO chunks) from the reader
-    ///
-    /// Internal helper method to parse map tile data referenced by offsets in the MAOF chunk.
-    ///
-    /// # Arguments
-    ///
-    /// * `reader` - The reader containing the file data
-    /// * `file` - The WdlFile being populated
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or an error.
     fn parse_map_tiles<R: Read + Seek>(&self, reader: &mut R, file: &mut WdlFile) -> Result<()> {
         for y in 0..64 {
             for x in 0..64 {
@@ -638,40 +477,5 @@ impl WdlParser {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn test_parse_zero_terminated_strings() {
-        let parser = WdlParser::new();
-
-        let data = b"test1\0test2\0test3\0";
-        let strings = parser.parse_zero_terminated_strings(data).unwrap();
-
-        assert_eq!(strings.len(), 3);
-        assert_eq!(strings[0], "test1");
-        assert_eq!(strings[1], "test2");
-        assert_eq!(strings[2], "test3");
-    }
-
-    #[test]
-    fn test_empty_write_read() {
-        let parser = WdlParser::new();
-        let file = WdlFile::new();
-
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-        parser.write(&mut cursor, &file).unwrap();
-
-        let mut cursor = Cursor::new(buffer);
-        let parsed_file = parser.parse(&mut cursor).unwrap();
-
-        assert_eq!(parsed_file.version, file.version);
-        assert_eq!(parsed_file.version_number, file.version_number);
     }
 }

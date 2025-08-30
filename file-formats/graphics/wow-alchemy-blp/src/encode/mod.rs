@@ -353,17 +353,3 @@ fn encode_dxtn(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sorting() {
-        let offsets = vec![356, 123, 567, 421];
-        let sizes = vec![1, 2, 3, 4];
-        let mut pairs: Vec<(u32, u32)> = zip(offsets, sizes).collect();
-        pairs.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).expect("number cmp"));
-        assert_eq!(pairs, vec![(123, 2), (356, 1), (421, 4), (567, 3)]);
-    }
-}

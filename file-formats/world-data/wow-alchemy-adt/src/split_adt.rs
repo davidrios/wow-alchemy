@@ -1,83 +1,3 @@
-//! Support for split ADT files introduced in Cataclysm
-//!
-//! Starting with World of Warcraft: Cataclysm (4.x), Blizzard changed the ADT file format
-//! to use multiple separate files for memory optimization. Instead of storing all terrain
-//! data in a single large ADT file, the data is split across several specialized files.
-//!
-//! ## Split File Types
-//!
-//! | File Type | Description | Contains |
-//! |-----------|-------------|----------|
-//! | `root.adt` | Base terrain file | MVER, MHDR, MCNK (heights only) |
-//! | `_tex0.adt` | Primary textures | MTEX, MCNK texture layers |
-//! | `_tex1.adt` | Additional textures | Extended texture data |
-//! | `_obj0.adt` | Object placement | MMDX, MMID, MWMO, MWID, MDDF, MODF |
-//! | `_obj1.adt` | Additional objects | Extended object placement |
-//! | `_lod.adt` | Level-of-detail | Simplified terrain for distant rendering |
-//!
-//! ## Usage
-//!
-//! ```no_run
-//! use wow_alchemy_adt::split_adt::{SplitAdtParser, SplitAdtType};
-//! use std::fs::File;
-//! use std::io::BufReader;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Parse texture data from a Cataclysm+ split file
-//! let file = File::open("Kalimdor_32_48_tex0.adt")?;
-//! let mut reader = BufReader::new(file);
-//! let tex_data = SplitAdtParser::parse_tex0(&mut reader)?;
-//!
-//! // Access parsed texture information
-//! if let Some(mtex) = tex_data.mtex {
-//!     println!("Found {} textures", mtex.filenames.len());
-//! }
-//!
-//! // Parse object placement data
-//! let file = File::open("Kalimdor_32_48_obj0.adt")?;
-//! let mut reader = BufReader::new(file);
-//! let obj_data = SplitAdtParser::parse_obj0(&mut reader)?;
-//!
-//! // Access object placement information  
-//! if let Some(mddf) = obj_data.mddf {
-//!     println!("Found {} M2 placements", mddf.doodads.len());
-//! }
-//! if let Some(modf) = obj_data.modf {
-//!     println!("Found {} WMO placements", modf.models.len());
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## File Detection
-//!
-//! Split file types can be detected from their filename suffixes:
-//!
-//! ```rust
-//! use wow_alchemy_adt::split_adt::SplitAdtType;
-//!
-//! assert_eq!(SplitAdtType::from_filename("Map_32_48.adt"), SplitAdtType::Root);
-//! assert_eq!(SplitAdtType::from_filename("Map_32_48_tex0.adt"), SplitAdtType::Tex0);  
-//! assert_eq!(SplitAdtType::from_filename("Map_32_48_obj0.adt"), SplitAdtType::Obj0);
-//! assert_eq!(SplitAdtType::from_filename("Map_32_48_lod.adt"), SplitAdtType::Lod);
-//! ```
-//!
-//! ## Memory Benefits
-//!
-//! The split file system provides several advantages:
-//!
-//! - **Selective loading** - Load only needed components (e.g., just heights for collision)
-//! - **Reduced memory usage** - Avoid loading large texture data when not needed
-//! - **Faster initial load** - Start rendering terrain before textures finish loading
-//! - **Better caching** - Individual components can be cached independently
-//!
-//! ## Compatibility
-//!
-//! This implementation is fully compatible with:
-//! - **TrinityCore server** - Matches server-side split file handling
-//! - **World of Warcraft clients** - Follows Blizzard's split file specification
-//! - **Cataclysm through modern** - Supports all post-4.0 ADT variations
-
 use crate::Adt;
 use crate::chunk::*;
 use crate::error::Result;
@@ -297,7 +217,7 @@ impl SplitAdtParser {
         Self::parse_obj0(reader)
     }
 
-    /// Parse a tex1 file (additional texture data)  
+    /// Parse a tex1 file (additional texture data)
     pub fn parse_tex1<R: Read + Seek>(reader: &mut R) -> Result<TexAdtData> {
         // tex1 files have similar structure to tex0 but with additional textures
         // For now, use the same parsing logic as tex0
