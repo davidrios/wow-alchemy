@@ -160,33 +160,42 @@ jobs:
         run: |
           echo "::notice::Publishing packages to crates.io in dependency order..."
 
-          # First batch: Independent crates (can be published in parallel)
-          echo "::group::Publishing independent crates"
+          echo "::group::Publishing crates"
+          cargo publish -p wow-alchemy-utils &
+          cargo publish -p wow-alchemy-data-derive &
+          wait
+
+          echo "::notice::Waiting for crates.io to index the batch..."
+          sleep 60
+
+          echo "::group::Publishing crates"
+          cargo publish -p wow-alchemy-data
+
+          echo "::notice::Waiting for crates.io to index the batch..."
+          sleep 60
+
+          echo "::group::Publishing crates"
           cargo publish -p wow-alchemy-blp &
           cargo publish -p wow-alchemy-cdbc &
           cargo publish -p wow-alchemy-wdl &
           cargo publish -p wow-alchemy-wdt &
           cargo publish -p wow-alchemy-adt &
           cargo publish -p wow-alchemy-wmo &
-          wait  # Wait for all parallel publishes to complete
+          wait
           echo "::endgroup::"
 
-          # Wait for crates.io to index the first batch
           echo "::notice::Waiting for crates.io to index first batch..."
           sleep 60
 
-          # Second batch: Crates that depend on first batch
           echo "::group::Publishing dependent crates"
-          cargo publish -p wow-alchemy-m2  # Depends on wow-alchemy-blp
+          cargo publish -p wow-alchemy-m2
           echo "::endgroup::"
 
-          # Wait for crates.io to index second batch
           echo "::notice::Waiting for crates.io to index second batch..."
           sleep 60
 
-          # Third batch: CLI crate (depends on all others)
           echo "::group::Publishing CLI crate"
-          cargo publish -p wow-alchemy  # Depends on all other workspace crates
+          cargo publish -p wow-alchemy
           echo "::endgroup::"
 
           echo "::notice::All packages published successfully!"
