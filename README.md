@@ -22,15 +22,8 @@ Todo...
 
 ### Binary Releases
 
-Pre-built binaries are available for Linux, macOS, and Windows:
+Pre-built binaries are available for Linux, macOS, and Windows, check the releases page.
 
-```bash
-# Unix/Linux/macOS
-curl -fsSL https://raw.githubusercontent.com/davidrios/wow-alchemy/main/install.sh | bash
-
-# Windows PowerShell
-irm https://raw.githubusercontent.com/davidrios/wow-alchemy/main/install.ps1 | iex
-```
 
 ### From crates.io
 
