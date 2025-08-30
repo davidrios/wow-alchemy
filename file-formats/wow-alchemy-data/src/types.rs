@@ -1036,6 +1036,7 @@ mod tests {
         assert_eq!(wowarr, WowArray::<C2Vector>::new(3, 9));
     }
 
+    #[allow(clippy::upper_case_acronyms)]
     #[derive(
         super::Debug,
         Clone,
