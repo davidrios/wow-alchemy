@@ -10,30 +10,6 @@
     feature = "wdl",
     test
 ))]
-pub mod format;
-
-#[cfg(any(
-    feature = "dbc",
-    feature = "blp",
-    feature = "m2",
-    feature = "wmo",
-    feature = "adt",
-    feature = "wdt",
-    feature = "wdl",
-    test
-))]
-pub mod io;
-
-#[cfg(any(
-    feature = "dbc",
-    feature = "blp",
-    feature = "m2",
-    feature = "wmo",
-    feature = "adt",
-    feature = "wdt",
-    feature = "wdl",
-    test
-))]
 pub mod progress;
 
 #[cfg(any(
