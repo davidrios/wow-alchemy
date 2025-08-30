@@ -10,16 +10,16 @@ use super::animation::{M2AnimationBaseTrackData, M2AnimationBaseTrackHeader};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
 #[wow_data(from_type=MagicStr)]
 pub enum M2EventIdentifier {
-    /// PlaySoundKit (customAttack[x]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack[x]
+    /// PlaySoundKit (customAttack\[x\]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack\[x\]
     #[wow_data(expr=[0x24,0x41,0x48,0x30])]
     AH0,
-    /// PlaySoundKit (customAttack[x]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack[x]
+    /// PlaySoundKit (customAttack\[x\]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack\[x\]
     #[wow_data(expr=[0x24,0x41,0x48,0x31])]
     AH1,
-    /// PlaySoundKit (customAttack[x]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack[x]
+    /// PlaySoundKit (customAttack\[x\]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack\[x\]
     #[wow_data(expr=[0x24,0x41,0x48,0x32])]
     AH2,
-    /// PlaySoundKit (customAttack[x]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack[x]
+    /// PlaySoundKit (customAttack\[x\]) | soundEffect ID is defined by CreatureSoundDataRec::m_customAttack\[x\]
     #[wow_data(expr=[0x24,0x41,0x48,0x33])]
     AH3,
     /// BowMissleDestination | RangedWeapon | Bow Middle
@@ -202,22 +202,22 @@ pub enum M2EventIdentifier {
     /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x + 6] ({Custom0, Custom1, Custom2, Custom3})
     #[wow_data(expr=[0x24,0x47,0x43,0x33])]
     GC3,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x30])]
     GO0,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x31])]
     GO1,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x32])]
     GO2,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x33])]
     GO3,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x34])]
     GO4,
-    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound[x] ({Stand, Open, Loop, Close, Destroy, Opened})
+    /// GameObject_C_PlayAnimatedSound | soundEffect ID is defined by GameObjectDisplayInfoRec::m_Sound\[x\] ({Stand, Open, Loop, Close, Destroy, Opened})
     #[wow_data(expr=[0x24,0x47,0x4f,0x35])]
     GO5,
     /// PlayWoundAnimKit | Unit | Attack*, *Unarmed, ShieldBash, Special* | soundEntryId depends on SpellVisualKit
