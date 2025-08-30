@@ -4,7 +4,7 @@ use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u8)]
+    #[wow_data(bitflags=u8)]
     pub struct M2VertexFlags: u8 {
         const TRANSFORM_BONE_0 = 0x01;
         const TRANSFORM_BONE_1 = 0x02;

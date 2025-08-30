@@ -8,24 +8,24 @@ use crate::version::MD20Version;
 use super::animation::M2AnimationTrackData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(from_type=u16)]
+#[wow_data(from_type=u16)]
 pub enum M2TextureTransformType {
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     None = 0,
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Scroll = 1,
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Rotate = 2,
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     Scale = 3,
-    #[wow_alchemy_data(expr = 4)]
+    #[wow_data(expr = 4)]
     Matrix = 4,
 }
 
 #[derive(Debug, Clone, Copy, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2TextureTransformIdType {
-    #[wow_alchemy_data(read_if = version >= MD20Version::BfAPlus)]
+    #[wow_data(read_if = version >= MD20Version::BfAPlus)]
     Some {
         id: u32,
         transform_type: M2TextureTransformType,
@@ -34,31 +34,31 @@ pub enum M2TextureTransformIdType {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2TextureTransformHeader {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub id_type: M2TextureTransformIdType,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub translation: M2AnimationTrackHeader<C3Vector>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub rotation: M2AnimationTrackHeader<Quaternion>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub scaling: M2AnimationTrackHeader<C3Vector>,
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version = MD20Version, header = M2TextureTransformHeader)]
+#[wow_data(version = MD20Version, header = M2TextureTransformHeader)]
 pub struct M2TextureTransformData {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub translation: M2AnimationTrackData<C3Vector>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub rotation: M2AnimationTrackData<Quaternion>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub scaling: M2AnimationTrackData<C3Vector>,
 }
 

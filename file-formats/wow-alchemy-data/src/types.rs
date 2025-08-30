@@ -356,7 +356,7 @@ where
 {
     pub count: u32,
     pub offset: u32,
-    #[wow_alchemy_data(override_read = std::marker::PhantomData)]
+    #[wow_data(override_read = std::marker::PhantomData)]
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -467,9 +467,9 @@ where
     pub count: u32,
     pub offset: u32,
 
-    #[wow_alchemy_data(override_read = std::marker::PhantomData)]
+    #[wow_data(override_read = std::marker::PhantomData)]
     _phantom: std::marker::PhantomData<T>,
-    #[wow_alchemy_data(override_read = std::marker::PhantomData)]
+    #[wow_data(override_read = std::marker::PhantomData)]
     _version: std::marker::PhantomData<V>,
 }
 
@@ -1049,65 +1049,65 @@ mod tests {
         WowHeaderR,
         WowHeaderW,
     )]
-    #[wow_alchemy_data(from_type=u32)]
+    #[wow_data(from_type=u32)]
     pub enum M2Version {
-        #[wow_alchemy_data(expr = 1)]
+        #[wow_data(expr = 1)]
         Classic,
-        #[wow_alchemy_data(expr = 2)]
+        #[wow_data(expr = 2)]
         TBC,
-        #[wow_alchemy_data(expr = 3)]
+        #[wow_data(expr = 3)]
         WotLK,
-        #[wow_alchemy_data(expr = 4)]
+        #[wow_data(expr = 4)]
         Cataclysm,
-        #[wow_alchemy_data(expr = 5)]
+        #[wow_data(expr = 5)]
         MoP,
-        #[wow_alchemy_data(expr = 6)]
+        #[wow_data(expr = 6)]
         WoD,
-        #[wow_alchemy_data(expr = 7)]
+        #[wow_data(expr = 7)]
         Legion,
-        #[wow_alchemy_data(expr = 8)]
+        #[wow_data(expr = 8)]
         BfA,
     }
 
     impl DataVersion for M2Version {}
 
     #[derive(super::Debug, Clone, Copy, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(version = M2Version)]
+    #[wow_data(version = M2Version)]
     enum ExampleVersioned {
-        #[wow_alchemy_data(read_if = version <= M2Version::TBC)]
+        #[wow_data(read_if = version <= M2Version::TBC)]
         UpToTBC(i16, f32),
         Others(u16),
     }
 
     #[derive(super::Debug, Clone, Copy, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(version = M2Version)]
+    #[wow_data(version = M2Version)]
     enum OptionUpToMoP<T: WowHeaderR + WowHeaderW> {
-        #[wow_alchemy_data(read_if = version <= M2Version::MoP)]
+        #[wow_data(read_if = version <= M2Version::MoP)]
         Some(T),
         None,
     }
 
     #[derive(super::Debug, Clone, Copy, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(version = M2Version)]
+    #[wow_data(version = M2Version)]
     enum OptionAfterMoP<T: WowHeaderR + WowHeaderW> {
-        #[wow_alchemy_data(read_if = version > M2Version::MoP)]
+        #[wow_data(read_if = version > M2Version::MoP)]
         Some(T),
         None,
     }
 
     #[derive(super::Debug, Clone, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(version = M2Version)]
+    #[wow_data(version = M2Version)]
     struct ExampleHeader {
-        #[wow_alchemy_data(override_read = M2Version::Classic)]
+        #[wow_data(override_read = M2Version::Classic)]
         _version: M2Version,
         crc: u32,
         vectors: WowArray<C2Vector>,
-        #[wow_alchemy_data(versioned)]
+        #[wow_data(versioned)]
         versioned_data: ExampleVersioned,
         bounding_box: BoundingBox,
-        #[wow_alchemy_data(versioned)]
+        #[wow_data(versioned)]
         up_to_mop: OptionUpToMoP<i16>,
-        #[wow_alchemy_data(versioned)]
+        #[wow_data(versioned)]
         after_mop: OptionAfterMoP<f32>,
     }
 

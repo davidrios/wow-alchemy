@@ -9,26 +9,26 @@ pub const BDY3: MagicStr = string_to_inverted_magic("BDY3");
 pub const BDY4: MagicStr = string_to_inverted_magic("BDY4");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WowEnumFrom)]
-#[wow_alchemy_data(from_type=MagicStr)]
+#[wow_data(from_type=MagicStr)]
 pub enum Version {
-    #[wow_alchemy_data(expr=BODY)]
+    #[wow_data(expr=BODY)]
     V1,
-    #[wow_alchemy_data(expr=BDY2)]
+    #[wow_data(expr=BDY2)]
     V2,
-    #[wow_alchemy_data(expr=BDY3)]
+    #[wow_data(expr=BDY3)]
     V3,
-    #[wow_alchemy_data(expr=BDY4)]
+    #[wow_data(expr=BDY4)]
     V4,
 }
 
 impl DataVersion for Version {}
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum BoneIndex {
     Padding([u8; 2]),
 
-    #[wow_alchemy_data(read_if = version >= Version::V3)]
+    #[wow_data(read_if = version >= Version::V3)]
     Some(i16),
 }
 
@@ -39,9 +39,9 @@ impl Default for BoneIndex {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum ShapeIndex {
-    #[wow_alchemy_data(read_if = version <= Version::V2)]
+    #[wow_data(read_if = version <= Version::V2)]
     ModelBoneIndex(i16),
 
     ShapeIndex(i16),
@@ -54,9 +54,9 @@ impl Default for ShapeIndex {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum ShapesBaseCount {
-    #[wow_alchemy_data(read_if = version <= Version::V2)]
+    #[wow_data(read_if = version <= Version::V2)]
     V1 {
         base: i32,
         count: i32,
@@ -78,11 +78,11 @@ impl Default for ShapesBaseCount {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VE1<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version == Version::V1)]
+    #[wow_data(read_if = version == Version::V1)]
     Some(T),
 }
 
@@ -93,11 +93,11 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VE1<T> {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE2<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V2)]
+    #[wow_data(read_if = version >= Version::V2)]
     Some(T),
 }
 
@@ -108,11 +108,11 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE2<T> {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE3<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V3)]
+    #[wow_data(read_if = version >= Version::V3)]
     Some(T),
 }
 
@@ -123,11 +123,11 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE3<T> {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE4<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V4)]
+    #[wow_data(read_if = version >= Version::V4)]
     Some(T),
 }
 
@@ -138,25 +138,25 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE4<T> {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub struct Body {
     pub body_type: u16,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub bone_index: BoneIndex,
     pub position: C3Vector,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub shape_index: ShapeIndex,
     pub padding_x12: [u8; 2],
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub shape_count: ShapesBaseCount,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x1c: VGTE2<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub drag: VGTE3<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x24: VGTE3<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x28: VGTE3<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x2c: VGTE4<[u8; 4]>,
 }

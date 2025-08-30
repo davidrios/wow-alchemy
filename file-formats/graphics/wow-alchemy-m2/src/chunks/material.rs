@@ -3,7 +3,7 @@ use wow_alchemy_data_derive::{WowEnumFrom, WowHeaderR, WowHeaderW};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u16)]
+    #[wow_data(bitflags=u16)]
     pub struct M2RenderFlags: u16 {
         const UNLIT = 0x01;
         const UNFOGGED = 0x02;
@@ -22,7 +22,7 @@ bitflags::bitflags! {
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u16)]
+    #[wow_data(bitflags=u16)]
     pub struct M2BlendMode: u16 {
         const OPAQUE = 0;
         const ALPHA_KEY = 1;
@@ -37,20 +37,20 @@ bitflags::bitflags! {
 
 /// Material texture uv transformations
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(from_type=u16)]
+#[wow_data(from_type=u16)]
 pub enum M2TexTransformType {
     #[default]
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     None = 0,
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Scroll = 1,
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Rotate = 2,
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     Scale = 3,
-    #[wow_alchemy_data(expr = 4)]
+    #[wow_data(expr = 4)]
     Stretch = 4,
-    #[wow_alchemy_data(expr = 5)]
+    #[wow_data(expr = 5)]
     Camera = 5,
 }
 

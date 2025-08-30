@@ -26,7 +26,7 @@ pub const MD20_MAGIC: MagicStr = *b"MD20";
 
 bitflags! {
     #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u32)]
+    #[wow_data(bitflags=u32)]
     pub struct M2ModelFlags: u32 {
         const TILT_X = 0x0001;
         const TILT_Y = 0x0002;
@@ -64,9 +64,9 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2PlayableAnimationLookupHeader {
-    #[wow_alchemy_data(read_if = version <= MD20Version::TBCV4)]
+    #[wow_data(read_if = version <= MD20Version::TBCV4)]
     Some(WowArray<M2SequenceFallback>),
 
     #[default]
@@ -98,11 +98,11 @@ impl VWowDataR<MD20Version, M2PlayableAnimationLookupHeader> for M2PlayableAnima
 pub type M2SkinProfile = u32;
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2SkinProfilesHeader {
     UpToTBC(WowArray<M2SkinProfile>),
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Later(u32),
 }
 
@@ -142,12 +142,12 @@ pub struct M2TextureFlipbook {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2TextureFlipbooksHeader {
     Some(WowArray<M2TextureFlipbook>),
 
     #[default]
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     None,
 }
 
@@ -172,11 +172,11 @@ impl VWowDataR<MD20Version, M2TextureFlipbooksHeader> for M2TextureFlipbooks {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2BlenMapOverrides {
     None,
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::TBCV1)]
+    #[wow_data(read_if = version >= MD20Version::TBCV1)]
     Some(WowArray<u16>),
 }
 
@@ -217,17 +217,17 @@ impl WowDataR<M2TextureCombinerCombosHeader> for M2TextureCombinerCombos {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2TextureTransforms {
     None,
 
-    #[wow_alchemy_data(read_if = version > MD20Version::BfAPlus)]
+    #[wow_data(read_if = version > MD20Version::BfAPlus)]
     Some(WowArray<u32>),
 }
 
 /// Based on: <https://wowdev.wiki/M2#Header>
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct MD20Header {
     pub version: MD20Version,
     pub name: WowCharArray,
@@ -236,18 +236,18 @@ pub struct MD20Header {
     // Sequence-related fields
     pub global_sequences: WowArray<u32>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub animations: WowArrayV<MD20Version, M2Animation>,
 
     /// Animation lookups (C in Vanilla)
     pub animation_lookup: WowArray<i16>,
 
     /// Playable animation lookup - only present in versions <= 263
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub playable_animation_lookup: M2PlayableAnimationLookupHeader,
 
     // Bone-related fields
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub bones: WowArrayV<MD20Version, M2BoneHeader>,
 
     pub key_bone_lookup: WowArray<i16>,
@@ -255,23 +255,23 @@ pub struct MD20Header {
     // Geometry data
     pub vertices: WowArray<M2Vertex>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub skin_profiles: M2SkinProfilesHeader,
 
     // Color data
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub color_animations: WowArrayV<MD20Version, M2ColorAnimationHeader>,
 
     // Texture-related fields
     pub textures: WowArray<M2TextureHeader>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub texture_weights: WowArrayV<MD20Version, M2TransparencyAnimationHeader>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub texture_flipbooks: M2TextureFlipbooksHeader,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub texture_transforms: WowArrayV<MD20Version, M2TextureTransformHeader>,
 
     pub replaceable_texture_lookup: WowArray<i16>,
@@ -294,24 +294,24 @@ pub struct MD20Header {
     pub bounding_normals: WowArray<C3Vector>,
 
     // Attachments and events
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub attachments: WowArrayV<MD20Version, M2AttachmentHeader>,
     pub attachment_lookup_table: WowArray<i16>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub events: WowArrayV<MD20Version, M2EventHeader>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub lights: WowArrayV<MD20Version, M2LightHeader>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub cameras: WowArrayV<MD20Version, M2CameraHeader>,
     pub camera_lookup_table: WowArray<i16>,
 
     // Particle systems
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub ribbon_emitters: WowArrayV<MD20Version, M2RibbonEmitterHeader>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub particle_emitters: WowArrayV<MD20Version, M2ParticleEmitterHeader>,
 
-    #[wow_alchemy_data(override_read = if flags.contains(M2ModelFlags::USE_TEXTURE_COMBINERS) {
+    #[wow_data(override_read = if flags.contains(M2ModelFlags::USE_TEXTURE_COMBINERS) {
         M2TextureCombinerCombosHeader::Some(reader.wow_read()?)
     } else {
         M2TextureCombinerCombosHeader::None

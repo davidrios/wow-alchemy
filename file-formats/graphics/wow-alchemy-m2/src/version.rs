@@ -16,40 +16,40 @@ use wow_alchemy_data_derive::{WowEnumFrom, WowHeaderR, WowHeaderW};
     WowHeaderR,
     WowHeaderW,
 )]
-#[wow_alchemy_data(from_type=u32)]
+#[wow_data(from_type=u32)]
 pub enum MD20Version {
-    #[wow_alchemy_data(expr = 0x0, default)]
+    #[wow_data(expr = 0x0, default)]
     Unknown,
 
-    #[wow_alchemy_data(expr = 0x0100)]
+    #[wow_data(expr = 0x0100)]
     VanillaV1,
-    #[wow_alchemy_data(expr = 0x0101)]
+    #[wow_data(expr = 0x0101)]
     VanillaV2,
-    #[wow_alchemy_data(expr = 0x0102)]
+    #[wow_data(expr = 0x0102)]
     VanillaV3,
-    #[wow_alchemy_data(expr = 0x0103)]
+    #[wow_data(expr = 0x0103)]
     VanillaV4,
 
-    #[wow_alchemy_data(expr = 0x0104)]
+    #[wow_data(expr = 0x0104)]
     TBCV1,
-    #[wow_alchemy_data(expr = 0x0105)]
+    #[wow_data(expr = 0x0105)]
     TBCV2,
-    #[wow_alchemy_data(expr = 0x0106)]
+    #[wow_data(expr = 0x0106)]
     TBCV3,
-    #[wow_alchemy_data(expr = 0x0107)]
+    #[wow_data(expr = 0x0107)]
     TBCV4,
 
-    #[wow_alchemy_data(expr = 0x0108)]
+    #[wow_data(expr = 0x0108)]
     WotLK,
 
-    #[wow_alchemy_data(expr = 0x0109)]
+    #[wow_data(expr = 0x0109)]
     Cataclysm,
 
-    #[wow_alchemy_data(expr = 0x0110)]
+    #[wow_data(expr = 0x0110)]
     MoPPlus,
 
     #[default]
-    #[wow_alchemy_data(expr = 0x0112)]
+    #[wow_data(expr = 0x0112)]
     BfAPlus,
 }
 

@@ -11,7 +11,7 @@ use super::animation::{
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u32)]
+    #[wow_data(bitflags=u32)]
     pub struct M2ParticleFlags: u32 {
         /// Particles are billboarded
         const BILLBOARDED = 0x00000008;
@@ -57,34 +57,34 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, WowEnumFrom)]
-#[wow_alchemy_data(from_type=u8)]
+#[wow_data(from_type=u8)]
 pub enum M2ParticleEmitterType {
     /// Point emitter (particles spawn from a single point)
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     Point = 0,
     /// Plane emitter (particles spawn within a 2D plane)
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Plane = 1,
     /// Sphere emitter (particles spawn within a 3D sphere)
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Sphere = 2,
     /// Spline emitter (particles follow a spline path)
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     Spline = 3,
     /// Bone emitter (particles spawn from a bone)
-    #[wow_alchemy_data(expr = 4)]
+    #[wow_data(expr = 4)]
     Bone = 4,
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterBlending {
     Vanilla {
         blending_type: u16,
         emitter_type: u16,
     },
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::TBCV1)]
+    #[wow_data(read_if = version >= MD20Version::TBCV1)]
     Later {
         blending_type: u8,
         emitter_type: u8,
@@ -93,37 +93,37 @@ pub enum M2ParticleEmitterBlending {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterMultiTextureParam {
     PreCata {
         particle_type: u8,
         head_or_tail: u8,
     },
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::Cataclysm)]
+    #[wow_data(read_if = version >= MD20Version::Cataclysm)]
     AfterCata(u8),
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterLifespanVary {
     None,
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Some(f32),
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterEmissionRateVary {
     None,
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Some(f32),
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterColorAnimationHeader {
     UpToTbc {
         mid_point: f32,
@@ -134,7 +134,7 @@ pub enum M2ParticleEmitterColorAnimationHeader {
         tail_decay_uv_animation: [i16; 2],
     },
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Later {
         color_animation: M2FakeAnimationBlockHeader<C3Vector>,
         alpha_animation: M2FakeAnimationBlockHeader<u16>,
@@ -192,13 +192,13 @@ impl VWowDataR<MD20Version, M2ParticleEmitterColorAnimationHeader>
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2ParticleEmitterSpin {
     UpToTbc {
         spin: f32,
     },
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Later {
         base_spin: f32,
         base_spin_vary: f32,
@@ -209,7 +209,7 @@ pub enum M2ParticleEmitterSpin {
 
 /// Represents a particle emitter in an M2 model
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2ParticleEmitterOldHeader {
     pub id: u32,
     pub flags: M2ParticleFlags,
@@ -218,38 +218,38 @@ pub struct M2ParticleEmitterOldHeader {
     pub texture_index: u16,
     pub model_filename: WowCharArray,
     pub recursion_model_filename: WowCharArray,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub blending_type: M2ParticleEmitterBlending,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub multi_texture_param: M2ParticleEmitterMultiTextureParam,
     pub texture_tile_rotation: u16,
     pub texture_dimension_rows: u16,
     pub texture_dimension_cols: u16,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_speed: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub speed_variation: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub vertical_range: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub horizontal_range: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub gravity: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub lifespan: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub lifespan_vary: M2ParticleEmitterLifespanVary,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_rate: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_rate_vary: M2ParticleEmitterEmissionRateVary,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_area_length: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_area_width: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub zsource: M2AnimationTrackHeader<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub color_animation: M2ParticleEmitterColorAnimationHeader,
     pub tail_length: f32,
     pub twinkle_speed: f32,
@@ -257,7 +257,7 @@ pub struct M2ParticleEmitterOldHeader {
     pub twinkle_scale: M2Range,
     pub burst_multiplier: f32,
     pub drag: f32,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub spin: M2ParticleEmitterSpin,
     pub tumble: M2Box,
     pub wind_vector: C3Vector,
@@ -267,39 +267,39 @@ pub struct M2ParticleEmitterOldHeader {
     pub follow_speed_2: f32,
     pub follow_scale_2: f32,
     pub spline_points: WowArray<C3Vector>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub enabled_in: M2AnimationTrackHeader<u8>,
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version = MD20Version, header = M2ParticleEmitterOldHeader)]
+#[wow_data(version = MD20Version, header = M2ParticleEmitterOldHeader)]
 pub struct M2ParticleEmitterOldData {
     pub model_filename: String,
     pub recursion_model_filename: String,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_speed: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub speed_variation: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub vertical_range: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub horizontal_range: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub gravity: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub lifespan: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_rate: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_area_length: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub emission_area_width: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub zsource: M2AnimationTrackData<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub color_animation: M2ParticleEmitterColorAnimation,
     pub spline_points: Vec<C3Vector>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub enabled_in: M2AnimationTrackData<u8>,
 }
 
@@ -310,27 +310,27 @@ pub struct M2ParticleEmitterOld {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2ParticleEmitterNewHeader {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub old_particle: M2ParticleEmitterOldHeader,
     pub multi_texture_param_0: [VectorFp6_9; 2],
     pub multi_texture_param_1: [VectorFp6_9; 2],
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version = MD20Version, header = M2ParticleEmitterNewHeader)]
+#[wow_data(version = MD20Version, header = M2ParticleEmitterNewHeader)]
 pub struct M2ParticleEmitterNewData {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub old_particle: M2ParticleEmitterOldData,
 }
 
 #[derive(Debug, Clone, WowHeaderW)]
-#[wow_alchemy_data(version = M2Version)]
+#[wow_data(version = M2Version)]
 pub enum M2ParticleEmitterHeader {
     PreCata(M2ParticleEmitterOldHeader),
 
-    #[wow_alchemy_data(read_if = version >= M2Version::Cataclysm)]
+    #[wow_data(read_if = version >= M2Version::Cataclysm)]
     PostCata(M2ParticleEmitterNewHeader),
 }
 

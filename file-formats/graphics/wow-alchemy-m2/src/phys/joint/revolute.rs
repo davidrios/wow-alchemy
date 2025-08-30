@@ -9,23 +9,23 @@ pub const REVJ: MagicStr = string_to_inverted_magic("REVJ");
 pub const REV2: MagicStr = string_to_inverted_magic("REV2");
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WowEnumFrom)]
-#[wow_alchemy_data(from_type=MagicStr)]
+#[wow_data(from_type=MagicStr)]
 pub enum Version {
-    #[wow_alchemy_data(expr=REVJ)]
+    #[wow_data(expr=REVJ)]
     V1,
     #[default]
-    #[wow_alchemy_data(expr=REV2)]
+    #[wow_data(expr=REV2)]
     V2,
 }
 
 impl DataVersion for Version {}
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE2<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V2)]
+    #[wow_data(read_if = version >= Version::V2)]
     Some(T),
 }
 
@@ -36,13 +36,13 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE2<T> {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub struct JointRevolute {
     pub frame_a: Mat3x4,
     pub frame_b: Mat3x4,
     pub lower_angle: f32,
     pub upper_angle: f32,
     pub motor_tm: TorqueMode,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub motor_fd: VGTE2<FrequencyDamping>,
 }

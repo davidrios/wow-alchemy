@@ -2,11 +2,11 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Arm, Data, DeriveInput, Expr, Fields, Ident, LitStr, Type, parse_macro_input};
 
-#[proc_macro_derive(WowHeaderR, attributes(wow_alchemy_data))]
+#[proc_macro_derive(WowHeaderR, attributes(wow_data))]
 pub fn wow_header_r_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let struct_wow_attrs = match parse_wow_alchemy_data_attrs(&input.attrs) {
+    let struct_wow_attrs = match parse_wow_data_attrs(&input.attrs) {
         Ok(value) => value,
         Err(err) => {
             return err.to_compile_error().into();
@@ -47,7 +47,7 @@ pub fn wow_header_r_derive(input: TokenStream) -> TokenStream {
         let Data::Enum(_) = &input.data else {
             return syn::Error::new_spanned(
                 struct_name,
-                "WowHeaderR with wow_alchemy_data(from_type=TYPE) can only be derived for enums.",
+                "WowHeaderR with wow_data(from_type=TYPE) can only be derived for enums.",
             )
             .to_compile_error()
             .into();
@@ -105,11 +105,11 @@ fn generate_header_rv_struct_reader_body(
                 let field_name = field.ident.as_ref().unwrap();
                 let field_ty = &field.ty;
 
-                let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&field.attrs)?;
+                let wow_data_attrs = parse_wow_data_attrs(&field.attrs)?;
 
-                if let Some(val) = wow_alchemy_data_attrs.override_read {
+                if let Some(val) = wow_data_attrs.override_read {
                     read_lines.push(quote! { let #field_name = #val; });
-                } else if wow_alchemy_data_attrs.versioned {
+                } else if wow_data_attrs.versioned {
                     read_lines.push(
                     quote! { let #field_name: #field_ty = reader.wow_read_versioned(version)?; },
                 );
@@ -170,9 +170,9 @@ fn generate_header_rv_enum_reader_body(
             }
         };
 
-        let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&variant.attrs)?;
+        let wow_data_attrs = parse_wow_data_attrs(&variant.attrs)?;
 
-        if let Some(cond_expr) = wow_alchemy_data_attrs.read_if {
+        if let Some(cond_expr) = wow_data_attrs.read_if {
             conditional_arms.push(quote! { if #cond_expr { #constructor } });
         } else {
             if default_arm.is_some() {
@@ -217,7 +217,7 @@ struct WowDataAttrs {
     bitflags: Option<Type>,
 }
 
-fn parse_wow_alchemy_data_attrs(attrs: &[syn::Attribute]) -> syn::Result<WowDataAttrs> {
+fn parse_wow_data_attrs(attrs: &[syn::Attribute]) -> syn::Result<WowDataAttrs> {
     let mut data_attrs = WowDataAttrs {
         versioned: false,
         default: false,
@@ -233,7 +233,7 @@ fn parse_wow_alchemy_data_attrs(attrs: &[syn::Attribute]) -> syn::Result<WowData
     };
 
     for attr in attrs {
-        if !attr.path().is_ident("wow_alchemy_data") {
+        if !attr.path().is_ident("wow_data") {
             continue;
         }
 
@@ -300,11 +300,11 @@ fn parse_wow_alchemy_data_attrs(attrs: &[syn::Attribute]) -> syn::Result<WowData
     Ok(data_attrs)
 }
 
-#[proc_macro_derive(WowHeaderW, attributes(wow_alchemy_data))]
+#[proc_macro_derive(WowHeaderW, attributes(wow_data))]
 pub fn wow_header_w_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let struct_wow_attrs = match parse_wow_alchemy_data_attrs(&input.attrs) {
+    let struct_wow_attrs = match parse_wow_data_attrs(&input.attrs) {
         Ok(value) => value,
         Err(err) => {
             return err.to_compile_error().into();
@@ -364,9 +364,9 @@ fn generate_struct_writer_body(
             let mut write_statements = Vec::new();
 
             for field in &f.named {
-                let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&field.attrs)?;
+                let wow_data_attrs = parse_wow_data_attrs(&field.attrs)?;
 
-                if wow_alchemy_data_attrs.override_read.is_some() {
+                if wow_data_attrs.override_read.is_some() {
                     write_statements.push(quote! {});
                 } else {
                     let field_name = field.ident.as_ref().unwrap();
@@ -409,9 +409,9 @@ fn generate_struct_size_body(
             let mut size_expressions = Vec::new();
 
             for field in &f.named {
-                let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&field.attrs)?;
+                let wow_data_attrs = parse_wow_data_attrs(&field.attrs)?;
 
-                if wow_alchemy_data_attrs.override_read.is_some() {
+                if wow_data_attrs.override_read.is_some() {
                     size_expressions.push(quote! {0});
                 } else {
                     let field_name = field.ident.as_ref().unwrap();
@@ -563,11 +563,11 @@ fn generate_enum_size_body(
     }
 }
 
-#[proc_macro_derive(WowDataR, attributes(wow_alchemy_data))]
-pub fn wow_alchemy_data_r_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(WowDataR, attributes(wow_data))]
+pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let struct_wow_alchemy_data_attrs = match parse_wow_alchemy_data_attrs(&input.attrs) {
+    let struct_wow_data_attrs = match parse_wow_data_attrs(&input.attrs) {
         Ok(data_attrs) => data_attrs,
         Err(e) => return e.to_compile_error().into(),
     };
@@ -595,14 +595,14 @@ pub fn wow_alchemy_data_r_derive(input: TokenStream) -> TokenStream {
 
     for field in fields {
         let field_name = field.ident.as_ref().unwrap();
-        let wow_alchemy_data_attrs = match parse_wow_alchemy_data_attrs(&field.attrs) {
+        let wow_data_attrs = match parse_wow_data_attrs(&field.attrs) {
             Ok(data_attrs) => data_attrs,
             Err(e) => return e.to_compile_error().into(),
         };
 
-        if let Some(expr) = wow_alchemy_data_attrs.override_read {
+        if let Some(expr) = wow_data_attrs.override_read {
             initializers.push(quote! { #field_name: #expr });
-        } else if wow_alchemy_data_attrs.versioned {
+        } else if wow_data_attrs.versioned {
             initializers
                 .push(quote! { #field_name: reader.v_new_from_header(&header.#field_name)? });
         } else {
@@ -612,16 +612,16 @@ pub fn wow_alchemy_data_r_derive(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let Some(header_ty) = struct_wow_alchemy_data_attrs.header else {
+    let Some(header_ty) = struct_wow_data_attrs.header else {
         return syn::Error::new_spanned(
             struct_name,
-            "WowDataR needs at least #[wow_alchemy_data(header = H)] definition.",
+            "WowDataR needs at least #[wow_data(header = H)] definition.",
         )
         .to_compile_error()
         .into();
     };
 
-    TokenStream::from(if struct_wow_alchemy_data_attrs.version.is_none() {
+    TokenStream::from(if struct_wow_data_attrs.version.is_none() {
         quote! {
             impl #impl_generics wow_alchemy_data::types::WowDataR<#header_ty> for #struct_name #ty_generics #where_clause {
                 fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
@@ -632,7 +632,7 @@ pub fn wow_alchemy_data_r_derive(input: TokenStream) -> TokenStream {
             }
         }
     } else {
-        let version_ty = struct_wow_alchemy_data_attrs.version.unwrap();
+        let version_ty = struct_wow_data_attrs.version.unwrap();
         quote! {
             impl #impl_generics wow_alchemy_data::types::VWowDataR<#version_ty, #header_ty> for #struct_name #ty_generics #where_clause {
                 fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
@@ -654,10 +654,10 @@ fn generate_wow_enum_from_value_lines(
 
     for variant in &data.variants {
         let variant_ident = &variant.ident;
-        let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&variant.attrs)?;
+        let wow_data_attrs = parse_wow_data_attrs(&variant.attrs)?;
 
-        if let Some(expr) = wow_alchemy_data_attrs.expr {
-            if wow_alchemy_data_attrs.default {
+        if let Some(expr) = wow_data_attrs.expr {
+            if wow_data_attrs.default {
                 has_default = Some(quote! {
                     _ => Self::#variant_ident,
                 });
@@ -674,9 +674,9 @@ fn generate_wow_enum_from_value_lines(
                     ));
                 }
             }
-        } else if let Some(from_arm) = wow_alchemy_data_attrs.from_arm {
+        } else if let Some(from_arm) = wow_data_attrs.from_arm {
             let arm = quote! { #from_arm, };
-            if wow_alchemy_data_attrs.default {
+            if wow_data_attrs.default {
                 has_default = Some(arm);
             } else {
                 lines.push(arm);
@@ -684,7 +684,7 @@ fn generate_wow_enum_from_value_lines(
         } else {
             return Err(syn::Error::new_spanned(
                 variant,
-                "WowEnumFrom requires a wow_alchemy_data(expr=EXPR | from_arm=ARM_STR) attribute for each variant",
+                "WowEnumFrom requires a wow_data(expr=EXPR | from_arm=ARM_STR) attribute for each variant",
             ));
         };
     }
@@ -711,8 +711,8 @@ fn generate_wow_enum_to_value_lines(
     for variant in &data.variants {
         let variant_ident = &variant.ident;
 
-        let wow_alchemy_data_attrs = parse_wow_alchemy_data_attrs(&variant.attrs)?;
-        if let Some(expr) = wow_alchemy_data_attrs.expr {
+        let wow_data_attrs = parse_wow_data_attrs(&variant.attrs)?;
+        if let Some(expr) = wow_data_attrs.expr {
             match &variant.fields {
                 syn::Fields::Unit => {
                     lines.push(quote! { #struct_name::#variant_ident => #expr });
@@ -724,12 +724,12 @@ fn generate_wow_enum_to_value_lines(
                     ));
                 }
             }
-        } else if let Some(to_arm) = wow_alchemy_data_attrs.to_arm {
+        } else if let Some(to_arm) = wow_data_attrs.to_arm {
             lines.push(quote! { #to_arm, });
         } else {
             return Err(syn::Error::new_spanned(
                 variant,
-                "WowEnumFrom requires a wow_alchemy_data(expr=EXPR | to_arm=ARM_STR) attribute for each variant",
+                "WowEnumFrom requires a wow_data(expr=EXPR | to_arm=ARM_STR) attribute for each variant",
             ));
         };
     }
@@ -737,11 +737,11 @@ fn generate_wow_enum_to_value_lines(
     Ok(lines)
 }
 
-#[proc_macro_derive(WowEnumFrom, attributes(wow_alchemy_data))]
+#[proc_macro_derive(WowEnumFrom, attributes(wow_data))]
 pub fn wow_enum_from_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let struct_wow_attrs = match parse_wow_alchemy_data_attrs(&input.attrs) {
+    let struct_wow_attrs = match parse_wow_data_attrs(&input.attrs) {
         Ok(value) => value,
         Err(err) => {
             return err.to_compile_error().into();
@@ -753,7 +753,7 @@ pub fn wow_enum_from_derive(input: TokenStream) -> TokenStream {
     let Some(ty) = struct_wow_attrs.from_type else {
         return syn::Error::new_spanned(
             enum_name,
-            "WowEnumFrom requires a wow_alchemy_data(from_type=TYPE) attribute.",
+            "WowEnumFrom requires a wow_data(from_type=TYPE) attribute.",
         )
         .to_compile_error()
         .into();

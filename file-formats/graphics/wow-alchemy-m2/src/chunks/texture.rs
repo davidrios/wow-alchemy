@@ -4,75 +4,75 @@ use wow_alchemy_data::{error::Result as WDResult, types::WowString};
 use wow_alchemy_data_derive::{WowEnumFrom, WowHeaderR, WowHeaderW};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(from_type=u32)]
+#[wow_data(from_type=u32)]
 pub enum M2TextureType {
     /// Texture defined in filename
     #[default]
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     Hardcoded = 0,
     /// Body + clothes
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Body = 1,
     /// Item, capes
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Item = 2,
     /// Weapon blade
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     WeaponBlade = 3,
     /// Weapon handle
-    #[wow_alchemy_data(expr = 4)]
+    #[wow_data(expr = 4)]
     WeaponHandle = 4,
     /// Environment
-    #[wow_alchemy_data(expr = 5)]
+    #[wow_data(expr = 5)]
     Environment = 5,
     /// Hair, beard
-    #[wow_alchemy_data(expr = 6)]
+    #[wow_data(expr = 6)]
     Hair = 6,
-    #[wow_alchemy_data(expr = 7)]
+    #[wow_data(expr = 7)]
     FacialHair = 7,
-    #[wow_alchemy_data(expr = 8)]
+    #[wow_data(expr = 8)]
     SkinExtra = 8,
-    #[wow_alchemy_data(expr = 9)]
+    #[wow_data(expr = 9)]
     UISkin = 9,
-    #[wow_alchemy_data(expr = 10)]
+    #[wow_data(expr = 10)]
     TaurenMane = 10,
-    #[wow_alchemy_data(expr = 11)]
+    #[wow_data(expr = 11)]
     Monster1 = 11,
-    #[wow_alchemy_data(expr = 12)]
+    #[wow_data(expr = 12)]
     Monster2 = 12,
-    #[wow_alchemy_data(expr = 13)]
+    #[wow_data(expr = 13)]
     Monster3 = 13,
-    #[wow_alchemy_data(expr = 14)]
+    #[wow_data(expr = 14)]
     ItemIcon = 14,
-    #[wow_alchemy_data(expr = 15)]
+    #[wow_data(expr = 15)]
     GuildBgColor = 15,
-    #[wow_alchemy_data(expr = 16)]
+    #[wow_data(expr = 16)]
     GuildEmblemColor = 16,
-    #[wow_alchemy_data(expr = 17)]
+    #[wow_data(expr = 17)]
     GuildBorderColor = 17,
-    #[wow_alchemy_data(expr = 18)]
+    #[wow_data(expr = 18)]
     GuildEmblem = 18,
-    #[wow_alchemy_data(expr = 19)]
+    #[wow_data(expr = 19)]
     CharacterEyes = 19,
-    #[wow_alchemy_data(expr = 20)]
+    #[wow_data(expr = 20)]
     CharacterAccessory = 20,
-    #[wow_alchemy_data(expr = 21)]
+    #[wow_data(expr = 21)]
     CharacterSecondarySkin = 21,
-    #[wow_alchemy_data(expr = 22)]
+    #[wow_data(expr = 22)]
     CharacterSecondaryHair = 22,
-    #[wow_alchemy_data(expr = 23)]
+    #[wow_data(expr = 23)]
     CharacterSecondaryArmor = 23,
-    #[wow_alchemy_data(expr = 24)]
+    #[wow_data(expr = 24)]
     Unknown1 = 24,
-    #[wow_alchemy_data(expr = 25)]
+    #[wow_data(expr = 25)]
     Unknown2 = 25,
-    #[wow_alchemy_data(expr = 26)]
+    #[wow_data(expr = 26)]
     Unknown3 = 26,
 }
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u32)]
+    #[wow_data(bitflags=u32)]
     pub struct M2TextureFlags: u32 {
         /// Texture is wrapped horizontally
         const WRAP_X = 0x01;

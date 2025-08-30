@@ -10,12 +10,12 @@ pub const SHAP: MagicStr = string_to_inverted_magic("SHAP");
 pub const SHP2: MagicStr = string_to_inverted_magic("SHP2");
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WowEnumFrom)]
-#[wow_alchemy_data(from_type=MagicStr)]
+#[wow_data(from_type=MagicStr)]
 pub enum Version {
-    #[wow_alchemy_data(expr=SHAP)]
+    #[wow_data(expr=SHAP)]
     V1,
     #[default]
-    #[wow_alchemy_data(expr=SHP2)]
+    #[wow_data(expr=SHP2)]
     V2,
 }
 
@@ -41,25 +41,25 @@ pub struct ShapeSphere {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(from_type=u16)]
+#[wow_data(from_type=u16)]
 pub enum ShapeType {
     #[default]
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     Box = 0,
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Capsule = 1,
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Sphere = 2,
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     Polytope = 3,
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE2<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V2)]
+    #[wow_data(read_if = version >= Version::V2)]
     Some(T),
 }
 
@@ -70,7 +70,7 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE2<T> {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub struct Shape {
     pub shape_type: ShapeType,
     pub index: i16,
@@ -78,12 +78,12 @@ pub struct Shape {
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x14: VGTE2<u32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x18: VGTE2<f32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x1c: VGTE2<u16>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub _x1e: VGTE2<[u8; 2]>,
 }

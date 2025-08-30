@@ -12,7 +12,7 @@ use super::animation::{M2AnimationTrackData, M2AnimationTrackHeader};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u32)]
+    #[wow_data(bitflags=u32)]
     pub struct M2BoneFlags: u32 {
         const SPHERICAL_BILLBOARD = 0x8;
         const CYLINDRICAL_BILLBOARD_LOCK_X = 0x10;
@@ -67,48 +67,48 @@ impl VWowDataR<MD20Version, M2BoneRotationHeader> for M2BoneRotationData {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2BoneCrc {
     None,
 
     /// Unknown use
-    #[wow_alchemy_data(read_if = version >= MD20Version::TBCV1 && version <= MD20Version::TBCV4)]
+    #[wow_data(read_if = version >= MD20Version::TBCV1 && version <= MD20Version::TBCV4)]
     TBC([u8; 4]),
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Crc(u32),
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2BoneHeader {
     pub bone_id: i32,
     pub flags: M2BoneFlags,
     pub parent_bone: i16,
     pub submesh_id: u16,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub bone_crc: M2BoneCrc,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub position: M2AnimationTrackHeader<C3Vector>,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub rotation: M2BoneRotationHeader,
 
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub scaling: M2AnimationTrackHeader<C3Vector>,
     pub pivot: C3Vector,
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version=MD20Version, header=M2BoneHeader)]
+#[wow_data(version=MD20Version, header=M2BoneHeader)]
 pub struct M2BoneData {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub position: M2AnimationTrackData<C3Vector>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub rotation: M2BoneRotationData,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub scaling: M2AnimationTrackData<C3Vector>,
 }
 

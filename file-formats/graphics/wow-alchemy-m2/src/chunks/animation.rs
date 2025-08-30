@@ -10,22 +10,22 @@ use wow_alchemy_data_derive::{WowDataR, WowEnumFrom, WowHeaderR, WowHeaderW};
 use crate::version::MD20Version;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, WowEnumFrom, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(from_type=u16)]
+#[wow_data(from_type=u16)]
 pub enum M2InterpolationType {
-    #[wow_alchemy_data(expr = 0)]
+    #[wow_data(expr = 0)]
     None = 0,
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     Linear = 1,
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     Bezier = 2,
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     Hermite = 3,
 }
 
 bitflags::bitflags! {
     /// Animation flags as defined in the M2 format
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u32)]
+    #[wow_data(bitflags=u32)]
     pub struct M2AnimationFlags: u32 {
         /// Animation has translation keyframes
         const HAS_TRANSLATION = 0x1;
@@ -60,20 +60,20 @@ pub struct M2Box {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum TrackArray<T: WowHeaderR + WowHeaderW> {
     Single(WowArray<T>),
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Multiple(WowArray<WowArray<T>>),
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2InterpolationRangeHeader {
     None,
 
-    #[wow_alchemy_data(read_if = version <= MD20Version::TBCV4)]
+    #[wow_data(read_if = version <= MD20Version::TBCV4)]
     Some(WowArray<(u32, u32)>),
 }
 
@@ -97,22 +97,22 @@ impl VWowDataR<MD20Version, M2InterpolationRangeHeader> for M2InterpolationRange
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2AnimationBaseTrackHeader {
     pub interpolation_type: M2InterpolationType,
     pub global_sequence: i16,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub interpolation_ranges: M2InterpolationRangeHeader,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub timestamps: TrackArray<u32>,
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version = MD20Version, header=M2AnimationBaseTrackHeader)]
+#[wow_data(version = MD20Version, header=M2AnimationBaseTrackHeader)]
 pub struct M2AnimationBaseTrackData {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub interpolation_ranges: M2InterpolationRange,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub timestamps: TrackVec<u32>,
 }
 
@@ -124,15 +124,15 @@ pub struct M2AnimationBaseTrack {
 
 /// An animation track header
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2AnimationTrackHeader<T: WowHeaderR + WowHeaderW> {
     pub interpolation_type: M2InterpolationType,
     pub global_sequence: i16,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub interpolation_ranges: M2InterpolationRangeHeader,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub timestamps: TrackArray<u32>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub values: TrackArray<T>,
 }
 
@@ -210,17 +210,17 @@ pub fn trimmed_trackvec_fmt<T: fmt::Debug>(n: &T, f: &mut fmt::Formatter) -> fmt
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(version = MD20Version, header = M2AnimationTrackHeader<T>)]
+#[wow_data(version = MD20Version, header = M2AnimationTrackHeader<T>)]
 pub struct M2AnimationTrackData<T: fmt::Debug + WowHeaderR + WowHeaderW> {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub interpolation_ranges: M2InterpolationRange,
 
     #[debug(with = trimmed_trackvec_fmt)]
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub timestamps: TrackVec<u32>,
 
     #[debug(with = trimmed_trackvec_fmt)]
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub values: TrackVec<T>,
 }
 
@@ -242,12 +242,12 @@ impl<T: fmt::Debug + WowHeaderR + WowHeaderW> M2AnimationTrackData<T> {
 
 /// Animation block for a specific animation type
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2AnimationBlock<T: WowHeaderR + WowHeaderW> {
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub track: M2AnimationTrackHeader<T>,
 
-    #[wow_alchemy_data(override_read = std::marker::PhantomData)]
+    #[wow_data(override_read = std::marker::PhantomData)]
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -268,7 +268,7 @@ pub struct M2FakeAnimationBlockHeader<T: WowHeaderR + WowHeaderW> {
 }
 
 #[derive(Debug, Clone, WowDataR)]
-#[wow_alchemy_data(header = M2FakeAnimationBlockHeader<T>)]
+#[wow_data(header = M2FakeAnimationBlockHeader<T>)]
 pub struct M2FakeAnimationBlockData<T: WowHeaderR + WowHeaderW> {
     pub timestamps: Vec<u16>,
     pub keys: Vec<u16>,
@@ -282,11 +282,11 @@ pub struct M2FakeAnimationBlock<T: WowHeaderR + WowHeaderW> {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2AnimationTiming {
     StartEnd(u32, u32),
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::WotLK)]
+    #[wow_data(read_if = version >= MD20Version::WotLK)]
     Duration(u32),
 }
 
@@ -297,11 +297,11 @@ impl Default for M2AnimationTiming {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub enum M2AnimationBlending {
     Time(u32),
 
-    #[wow_alchemy_data(read_if = version >= MD20Version::BfAPlus)]
+    #[wow_data(read_if = version >= MD20Version::BfAPlus)]
     InOut(u16, u16),
 }
 
@@ -313,11 +313,11 @@ impl Default for M2AnimationBlending {
 
 /// Animation data for a model
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = MD20Version)]
+#[wow_data(version = MD20Version)]
 pub struct M2Animation {
     pub animation_id: u16,
     pub sub_animation_id: u16,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub timing: M2AnimationTiming,
     pub movement_speed: f32,
     pub flags: M2AnimationFlags,
@@ -326,7 +326,7 @@ pub struct M2Animation {
     pub padding: u16,
     /// Replay range
     pub replay: M2Range,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub blending: M2AnimationBlending,
     pub bounding_box: BoundingBox,
     pub bounding_radius: f32,

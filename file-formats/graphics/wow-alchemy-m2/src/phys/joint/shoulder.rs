@@ -67,11 +67,11 @@ impl From<Version> for MagicStr {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE2<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V2)]
+    #[wow_data(read_if = version >= Version::V2)]
     Some(T),
 }
 
@@ -82,11 +82,11 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE2<T> {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub enum VGTE3<T: Default + WowHeaderR + WowHeaderW> {
     None,
 
-    #[wow_alchemy_data(read_if = version >= Version::V3)]
+    #[wow_data(read_if = version >= Version::V3)]
     Some(T),
 }
 
@@ -97,16 +97,16 @@ impl<T: Default + WowHeaderR + WowHeaderW> Default for VGTE3<T> {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = Version)]
+#[wow_data(version = Version)]
 pub struct JointShoulder {
     pub frame_a: Mat3x4,
     pub frame_b: Mat3x4,
     pub lower_twist_angle: f32,
     pub upper_twist_angle: f32,
     pub cone_angle: f32,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub motor_tm: VGTE2<TorqueMode>,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub motor_fd: VGTE3<FrequencyDamping>,
 }
 

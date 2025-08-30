@@ -13,27 +13,27 @@ use crate::error::Result;
 pub const SKIN_MAGIC: MagicStr = *b"SKIN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WowEnumFrom)]
-#[wow_alchemy_data(from_type=u32)]
+#[wow_data(from_type=u32)]
 pub enum SkinVersion {
     /// Used up to WotLK
-    #[wow_alchemy_data(expr = 1)]
+    #[wow_data(expr = 1)]
     V1,
     /// Used in WotLK
-    #[wow_alchemy_data(expr = 2)]
+    #[wow_data(expr = 2)]
     V2,
     /// Used in Cataclysm and later
-    #[wow_alchemy_data(expr = 3)]
+    #[wow_data(expr = 3)]
     V3,
 }
 
 impl DataVersion for SkinVersion {}
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = SkinVersion)]
+#[wow_data(version = SkinVersion)]
 pub enum SkinMagic {
     None,
 
-    #[wow_alchemy_data(read_if = version >= SkinVersion::V2)]
+    #[wow_data(read_if = version >= SkinVersion::V2)]
     Some([u8; 4]),
 }
 
@@ -45,7 +45,7 @@ impl Default for SkinMagic {
 
 bitflags! {
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
-    #[wow_alchemy_data(bitflags=u8)]
+    #[wow_data(bitflags=u8)]
     /// Usually 0x10(BATCH_SUPPORT) for static textures, and 0 for animated textures
     pub struct M2BatchFlags: u8 {
         const MATERIAL_INVERT = 0x01;
@@ -87,11 +87,11 @@ pub struct M2ShadowBatch {
 }
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = SkinVersion)]
+#[wow_data(version = SkinVersion)]
 pub enum SkinShadowBatchesHeader {
     None,
 
-    #[wow_alchemy_data(read_if = version >= SkinVersion::V3)]
+    #[wow_data(read_if = version >= SkinVersion::V3)]
     Some(WowArray<M2ShadowBatch>),
 }
 
@@ -144,10 +144,10 @@ impl SkinShadowBatches {
 }
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-#[wow_alchemy_data(version = SkinVersion)]
+#[wow_data(version = SkinVersion)]
 pub struct SkinHeader {
     /// Magic signature ("SKIN")
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub magic: SkinMagic,
     pub indices: WowArray<u16>,
     pub triangles: WowArray<u16>,
@@ -156,7 +156,7 @@ pub struct SkinHeader {
     /// Also known as batches
     pub texture_units: WowArray<M2Batch>,
     pub bone_count_max: u32,
-    #[wow_alchemy_data(versioned)]
+    #[wow_data(versioned)]
     pub shadow_batches: SkinShadowBatchesHeader,
 }
 
