@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Unified CLI for World of Warcraft file format parsing, conversion, and validation"
-keywords = ["wow", "warcraft", "blp", "dbc", "m2", "wmo", "wdt"]
+keywords = ["wow", "warcraft", "m2", "wmo"]
 categories = ["command-line-utilities", "game-development"]
 
 [dependencies]
