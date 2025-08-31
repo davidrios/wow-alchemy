@@ -1,6 +1,3 @@
-/// WMO format versions corresponding to different WoW expansions/patches
-/// Based on empirical analysis: WMO version remains 17 across all analyzed versions (1.12.1-5.4.8)
-/// Features are differentiated by chunk presence rather than version numbers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum WmoVersion {
     /// Classic/Vanilla (1.12.1) - Version 17, core chunks only
@@ -38,9 +35,6 @@ pub enum WmoVersion {
 }
 
 impl WmoVersion {
-    /// Convert a raw version number to a WmoVersion
-    /// Based on empirical analysis: version 17 spans Classic through MoP
-    /// Features are determined by expansion context and chunk presence
     pub fn from_raw(raw: u32) -> Option<Self> {
         match raw {
             17 => Some(Self::Classic), // Default to Classic for version 17
