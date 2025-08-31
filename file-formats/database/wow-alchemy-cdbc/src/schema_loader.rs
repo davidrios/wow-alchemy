@@ -1,5 +1,3 @@
-//! Schema loading functionality
-
 #[cfg(feature = "yaml")]
 use crate::{FieldType, Schema, SchemaField};
 #[cfg(feature = "yaml")]
@@ -12,35 +10,25 @@ use std::io::BufReader;
 use std::path::Path;
 
 #[cfg(feature = "yaml")]
-/// Schema definition for YAML files
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SchemaDefinition {
-    /// Name of the schema
     pub name: String,
-    /// Fields in the schema
     pub fields: Vec<SchemaFieldDefinition>,
-    /// Name of the key field, if any
     pub key_field: Option<String>,
 }
 
 #[cfg(feature = "yaml")]
-/// Field definition for YAML files
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SchemaFieldDefinition {
-    /// Name of the field
     pub name: String,
-    /// Type of the field
     pub type_name: String,
-    /// Whether the field is an array
     #[serde(default)]
     pub is_array: bool,
-    /// Size of the array, if the field is an array
     pub array_size: Option<usize>,
 }
 
 #[cfg(feature = "yaml")]
 impl SchemaDefinition {
-    /// Load a schema from a YAML file
     pub fn from_yaml<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -48,13 +36,11 @@ impl SchemaDefinition {
         Ok(schema_def)
     }
 
-    /// Load a schema from a YAML string
     pub fn from_yaml_str(yaml: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let schema_def: SchemaDefinition = serde_yaml_ng::from_str(yaml)?;
         Ok(schema_def)
     }
 
-    /// Convert a schema definition to a Schema
     pub fn to_schema(&self) -> Result<Schema, Box<dyn std::error::Error>> {
         let mut schema = Schema::new(&self.name);
 

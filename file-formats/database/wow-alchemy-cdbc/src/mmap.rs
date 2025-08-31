@@ -1,5 +1,3 @@
-//! Memory-mapped DBC file handling
-
 use crate::{
     DbcHeader, DbcParser, DbcVersion, Error, Result, Schema, StringBlock,
     versions::{Wdb2Header, Wdb5Header},

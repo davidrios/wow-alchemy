@@ -1,5 +1,3 @@
-//! Support for different DBC file versions
-
 use crate::{DbcHeader, Error, Result};
 use std::io::{Read, Seek, SeekFrom};
 
@@ -19,7 +17,6 @@ pub enum DbcVersion {
 }
 
 impl DbcVersion {
-    /// Detect the DBC version from a reader
     pub fn detect<R: Read + Seek>(reader: &mut R) -> Result<Self> {
         reader.seek(SeekFrom::Start(0))?;
 
@@ -39,7 +36,6 @@ impl DbcVersion {
         }
     }
 
-    /// Get the magic signature for this DBC version
     pub fn magic(&self) -> [u8; 4] {
         match self {
             DbcVersion::WDBC => *b"WDBC",

@@ -1,5 +1,3 @@
-//! Schema discovery functionality to auto-detect field types in DBC files.
-
 use crate::{DbcHeader, Error, FieldType, Result, Schema, SchemaField, StringBlock, StringRef};
 use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, SeekFrom};

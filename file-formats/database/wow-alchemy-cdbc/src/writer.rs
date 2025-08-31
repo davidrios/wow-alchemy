@@ -1,20 +1,14 @@
-//! DBC file writing functionality
-
 use crate::{Error, FieldType, Record, RecordSet, Result, Schema, Value};
 use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
 
-/// Writer for DBC files
 #[derive(Debug)]
 pub struct DbcWriter<W: Write + Seek> {
-    /// The output writer
     writer: W,
-    /// The schema to use for writing
     schema: Option<Schema>,
 }
 
 impl<W: Write + Seek> DbcWriter<W> {
-    /// Create a new DBC writer
     pub fn new(writer: W) -> Self {
         Self {
             writer,
@@ -22,15 +16,12 @@ impl<W: Write + Seek> DbcWriter<W> {
         }
     }
 
-    /// Set the schema for the writer
     pub fn with_schema(mut self, schema: Schema) -> Self {
         self.schema = Some(schema);
         self
     }
 
-    /// Write a record set to the output
     pub fn write_records(&mut self, record_set: &RecordSet) -> Result<()> {
-        // Ensure we have a schema
         let schema = if let Some(schema) = self.schema.as_ref() {
             schema.clone()
         } else if let Some(schema) = record_set.schema() {
@@ -41,7 +32,6 @@ impl<W: Write + Seek> DbcWriter<W> {
             ));
         };
 
-        // Build the string block
         let (string_block, string_offsets) = self.build_string_block(record_set)?;
 
         // Calculate header values
@@ -69,7 +59,6 @@ impl<W: Write + Seek> DbcWriter<W> {
         Ok(())
     }
 
-    /// Build a string block from a record set
     fn build_string_block(
         &self,
         record_set: &RecordSet,
@@ -102,7 +91,6 @@ impl<W: Write + Seek> DbcWriter<W> {
         Ok((string_block, string_offsets))
     }
 
-    /// Write a record to the output
     fn write_record(
         &mut self,
         record: &Record,
@@ -132,7 +120,6 @@ impl<W: Write + Seek> DbcWriter<W> {
         Ok(())
     }
 
-    /// Write a value to the output
     fn write_value(
         &mut self,
         value: &Value,

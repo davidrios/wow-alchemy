@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Represents a column definition in the DBD file
 #[derive(Debug, Clone)]
 pub struct DbdColumn {
     pub name: String,
@@ -17,14 +16,12 @@ pub struct DbdColumn {
     pub is_optional: bool,
 }
 
-/// Represents a foreign key reference
 #[derive(Debug, Clone)]
 pub struct ForeignKey {
     pub table: String,
     pub field: String,
 }
 
-/// Represents a field in a BUILD or LAYOUT section
 #[derive(Debug, Clone)]
 pub struct DbdField {
     pub name: String,
@@ -36,7 +33,6 @@ pub struct DbdField {
     pub is_noninline: bool,
 }
 
-/// Type size specification
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeSize {
     Unspecified,
@@ -80,14 +76,12 @@ impl TypeSize {
     }
 }
 
-/// Represents a BUILD section with version info and fields
 #[derive(Debug)]
 pub struct DbdBuild {
     pub versions: Vec<String>,
     pub fields: Vec<DbdField>,
 }
 
-/// Represents a LAYOUT section with hash and associated builds
 #[derive(Debug)]
 pub struct DbdLayout {
     pub hash: String,
@@ -95,7 +89,6 @@ pub struct DbdLayout {
     pub fields: Vec<DbdField>,
 }
 
-/// Represents a complete DBD file
 #[derive(Debug)]
 pub struct DbdFile {
     pub columns: Vec<DbdColumn>,
@@ -103,13 +96,11 @@ pub struct DbdFile {
     pub layouts: Vec<DbdLayout>,
 }
 
-/// Parse a DBD file from the given path
 pub fn parse_dbd_file(path: &Path) -> Result<DbdFile, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     parse_dbd_content(&content)
 }
 
-/// Parse DBD content from a string
 pub fn parse_dbd_content(content: &str) -> Result<DbdFile, Box<dyn std::error::Error>> {
     let mut columns = Vec::new();
     let mut builds = Vec::new();
@@ -124,14 +115,11 @@ pub fn parse_dbd_content(content: &str) -> Result<DbdFile, Box<dyn std::error::E
     for line in content.lines() {
         let line = line.trim();
 
-        // Skip empty lines
         if line.is_empty() {
             continue;
         }
 
-        // Check for section headers
         if line == "COLUMNS" {
-            // Save any pending build/layout
             save_pending_build(
                 &mut builds,
                 &mut current_build_versions,
@@ -147,7 +135,6 @@ pub fn parse_dbd_content(content: &str) -> Result<DbdFile, Box<dyn std::error::E
             current_section = Some("COLUMNS");
             continue;
         } else if let Some(stripped) = line.strip_prefix("BUILD ") {
-            // Save previous build if any
             save_pending_build(
                 &mut builds,
                 &mut current_build_versions,
@@ -159,7 +146,6 @@ pub fn parse_dbd_content(content: &str) -> Result<DbdFile, Box<dyn std::error::E
             current_build_versions = versions;
             continue;
         } else if let Some(stripped) = line.strip_prefix("LAYOUT ") {
-            // Save previous build/layout if any
             save_pending_build(
                 &mut builds,
                 &mut current_build_versions,
@@ -206,7 +192,6 @@ pub fn parse_dbd_content(content: &str) -> Result<DbdFile, Box<dyn std::error::E
         }
     }
 
-    // Save any remaining build/layout
     save_pending_build(
         &mut builds,
         &mut current_build_versions,

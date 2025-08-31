@@ -1,5 +1,3 @@
-//! Schema definitions for DBC files
-
 /// Represents the type of a field in a DBC record
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldType {
