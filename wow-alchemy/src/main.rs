@@ -1,5 +1,3 @@
-//! Main entry point for the wow-alchemy CLI
-
 mod cli;
 mod commands;
 mod utils;
@@ -13,13 +11,10 @@ use std::io;
 use crate::cli::{Cli, Commands};
 
 fn main() -> Result<()> {
-    // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    // Parse command line arguments
     let cli = Cli::parse();
 
-    // Set verbosity
     if cli.verbose > 0 {
         log::set_max_level(match cli.verbose {
             1 => log::LevelFilter::Info,
@@ -30,13 +25,9 @@ fn main() -> Result<()> {
         log::set_max_level(log::LevelFilter::Error);
     }
 
-    // Execute command
     match cli.command {
         #[cfg(feature = "dbc")]
         Commands::Dbc { command } => commands::dbc::execute(command),
-
-        #[cfg(feature = "dbc")]
-        Commands::Dbd { command } => command.execute(),
 
         #[cfg(feature = "blp")]
         Commands::Blp { command } => commands::blp::execute(command),

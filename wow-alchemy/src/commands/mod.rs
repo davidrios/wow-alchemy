@@ -1,10 +1,5 @@
-//! Command implementations for each file format
-
 #[cfg(feature = "dbc")]
 pub mod dbc;
-
-#[cfg(feature = "dbc")]
-pub mod dbd;
 
 #[cfg(feature = "blp")]
 pub mod blp;

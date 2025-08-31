@@ -19,9 +19,7 @@ clap_complete = "4.5"
 # File format crates
 wow-alchemy-data = { path = "../file-formats/wow-alchemy-data", version = "0.1.0", optional = true }
 wow-alchemy-cdbc = { path = "../file-formats/database/wow-alchemy-cdbc", version = "0.1.0", optional = true, features = [
-  "cli",
   "mmap",
-  "yaml",
 ] }
 wow-alchemy-blp = { path = "../file-formats/graphics/wow-alchemy-blp", version = "0.1.0", optional = true }
 wow-alchemy-m2 = { path = "../file-formats/graphics/wow-alchemy-m2", version = "0.1.0", optional = true }
@@ -55,7 +53,6 @@ rayon = { version = "1.10", optional = true }
 # Optional serialization for data export
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-serde_yaml_ng = { version = "0.10", optional = true }
 
 [features]
 default = ["dbc", "blp", "m2", "wmo", "adt", "wdt", "wdl"]
@@ -70,7 +67,6 @@ full = [
   "serde",
   "extract",
   "parallel",
-  "yaml",
 ]
 dbc = ["dep:wow-alchemy-cdbc"]
 blp = ["dep:wow-alchemy-blp", "dep:image"]
@@ -82,7 +78,6 @@ wdl = ["dep:wow-alchemy-wdl"]
 serde = ["dep:serde", "dep:serde_json"]
 extract = ["wow-alchemy-adt?/extract"]
 parallel = ["wow-alchemy-adt?/parallel", "dep:rayon"]
-yaml = ["dbc", "serde", "dep:serde_yaml_ng"]
 
 [[bin]]
 name = "wow-alchemy"

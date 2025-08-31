@@ -6,6 +6,9 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
+    #[error("Request error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
     #[error("Invalid DBC header: {0}")]
     InvalidHeader(String),
 
@@ -23,4 +26,7 @@ pub enum Error {
 
     #[error("Type conversion error: {0}")]
     TypeConversion(String),
+
+    #[error("Generic error: {0}")]
+    GenericError(String),
 }

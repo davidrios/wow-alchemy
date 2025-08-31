@@ -1,9 +1,6 @@
-//! Common field parsing functionality shared across modules
-
 use crate::{FieldType, Result, StringRef, Value};
 use std::io::Read;
 
-/// Parse a field value based on its type
 pub fn parse_field_value<R: Read>(reader: &mut R, field_type: FieldType) -> Result<Value> {
     match field_type {
         FieldType::Int32 => {
