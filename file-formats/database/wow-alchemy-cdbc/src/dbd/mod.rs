@@ -192,6 +192,8 @@ pub fn parse_dbd_content(game_build: &GameBuild, content: &str) -> Result<DbdFil
                 break;
             }
             continue;
+        } else if line.strip_prefix("COMMENT ").is_some() {
+            continue;
         }
 
         match current_section {
@@ -212,6 +214,7 @@ pub fn parse_dbd_content(game_build: &GameBuild, content: &str) -> Result<DbdFil
     }
 
     if current_build_fields.is_empty() {
+        dbg!(content);
         return Err(Error::GenericError(
             "no fields definition found for game build".into(),
         ));
@@ -284,7 +287,7 @@ fn parse_column_line(line: &str) -> Option<DbdColumn> {
 }
 
 fn parse_field_line(line: &str) -> DbdField {
-    let name: String;
+    let mut name: String;
     let mut type_size = TypeSize::Unspecified;
     let mut is_array = false;
     let mut array_size = None;
@@ -343,6 +346,10 @@ fn parse_field_line(line: &str) -> DbdField {
         }
     } else {
         name = base_part.trim().to_string();
+    }
+
+    if let Some(idx) = name.find(" ") {
+        name.truncate(idx);
     }
 
     DbdField {

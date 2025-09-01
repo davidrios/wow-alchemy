@@ -9,6 +9,9 @@ pub enum Error {
     #[error("Request error: {0}")]
     Reqwest(#[from] reqwest::Error),
 
+    #[error("Rusqlite error: {0}")]
+    Rusqlite(#[from] rusqlite::Error),
+
     #[error("Invalid DBC header: {0}")]
     InvalidHeader(String),
 
