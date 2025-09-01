@@ -1,5 +1,6 @@
 use std::io;
 use thiserror::Error;
+use wow_alchemy_data::error::WowDataError;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -12,24 +13,24 @@ pub enum Error {
     #[error("Rusqlite error: {0}")]
     Rusqlite(#[from] rusqlite::Error),
 
-    #[error("Invalid DBC header: {0}")]
-    InvalidHeader(String),
+    #[error("WowData error: {0}")]
+    WowData(#[from] wow_alchemy_data::error::WowDataError),
 
-    #[error("Invalid DBC record: {0}")]
-    InvalidRecord(String),
+    #[error("GameBuild error: {0}")]
+    GameBuild(String),
 
-    #[error("Invalid string block: {0}")]
-    InvalidStringBlock(String),
+    #[error("No dbd field definitions were found for the specified build")]
+    NoFieldsForBuild,
 
-    #[error("Schema validation error: {0}")]
-    SchemaValidation(String),
-
-    #[error("Out of bounds: {0}")]
-    OutOfBounds(String),
-
-    #[error("Type conversion error: {0}")]
-    TypeConversion(String),
+    #[error("Error generating SQLite table definition: {0}")]
+    SqliteTableDefinition(String),
 
     #[error("Generic error: {0}")]
     GenericError(String),
+}
+
+impl From<Error> for WowDataError {
+    fn from(value: Error) -> Self {
+        WowDataError::GenericError(format!("Error: {}", value))
+    }
 }

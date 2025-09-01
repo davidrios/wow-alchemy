@@ -7,7 +7,7 @@ use crate::{Error, Result};
 pub mod download;
 pub mod file_map;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GameBuild {
     pub major: u32,
     pub minor: u32,
@@ -25,7 +25,7 @@ impl TryFrom<&str> for GameBuild {
 
         for part in parts {
             let Ok(val) = part.parse() else {
-                return Err(Error::GenericError(format!(
+                return Err(Error::GameBuild(format!(
                     "can't convert string {} to game build",
                     value
                 )));
@@ -34,7 +34,7 @@ impl TryFrom<&str> for GameBuild {
 
             count += 1;
             if count > 4 {
-                return Err(Error::GenericError(format!(
+                return Err(Error::GameBuild(format!(
                     "can't convert string {} to game build",
                     value
                 )));
@@ -85,7 +85,8 @@ pub enum TypeSize {
     UInt16,
     Int32,
     UInt32,
-    Float,
+    Int64,
+    UInt64,
 }
 
 impl TypeSize {
@@ -97,6 +98,8 @@ impl TypeSize {
             "u16" => TypeSize::UInt16,
             "32" => TypeSize::Int32,
             "u32" => TypeSize::UInt32,
+            "64" => TypeSize::Int64,
+            "u64" => TypeSize::UInt64,
             _ => TypeSize::Unspecified,
         }
     }
@@ -109,7 +112,8 @@ impl TypeSize {
             TypeSize::UInt16 => "UInt16",
             TypeSize::Int32 => "Int32",
             TypeSize::UInt32 => "UInt32",
-            TypeSize::Float => "Float32",
+            TypeSize::Int64 => "Int64",
+            TypeSize::UInt64 => "UInt64",
             TypeSize::Unspecified => match base_type {
                 "float" => "Float32",
                 "string" | "locstring" => "String",
@@ -119,13 +123,13 @@ impl TypeSize {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DbdBuild {
     pub versions: Vec<GameBuildSpec>,
     pub fields: Vec<DbdField>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DbdFile {
     pub columns: HashMap<String, DbdColumn>,
     pub build: DbdBuild,
@@ -136,7 +140,7 @@ pub fn parse_dbd_file(game_build: &GameBuild, path: &Path) -> Result<DbdFile> {
     parse_dbd_content(game_build, &content)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum GameBuildSpec {
     Single(GameBuild),
     Range((GameBuild, GameBuild)),
@@ -214,10 +218,8 @@ pub fn parse_dbd_content(game_build: &GameBuild, content: &str) -> Result<DbdFil
     }
 
     if current_build_fields.is_empty() {
-        dbg!(content);
-        return Err(Error::GenericError(
-            "no fields definition found for game build".into(),
-        ));
+        println!("{content}");
+        return Err(Error::NoFieldsForBuild);
     }
 
     Ok(DbdFile {

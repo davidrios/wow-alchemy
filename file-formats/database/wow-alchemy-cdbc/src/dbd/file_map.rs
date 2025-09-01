@@ -1531,7 +1531,7 @@ pub fn get_dbd_name(file_name: &str) -> Result<&'static str> {
 
     let res: &'static str = get_db_file_map()
         .get(&file_name.as_str())
-        .ok_or_else(|| Error::SchemaValidation("".into()))?;
+        .ok_or_else(|| Error::GenericError(format!("cant find dbd by file_name {file_name}")))?;
 
     Ok(res)
 }

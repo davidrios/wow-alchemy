@@ -211,6 +211,38 @@ impl WowHeaderW for i8 {
     }
 }
 
+impl WowHeaderR for u64 {
+    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+        Ok(reader.read_u64::<LittleEndian>()?)
+    }
+}
+impl WowHeaderW for u64 {
+    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_u64::<LittleEndian>(*self)?;
+        Ok(())
+    }
+
+    fn wow_size(&self) -> usize {
+        8
+    }
+}
+
+impl WowHeaderR for i64 {
+    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+        Ok(reader.read_i64::<LittleEndian>()?)
+    }
+}
+impl WowHeaderW for i64 {
+    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_i64::<LittleEndian>(*self)?;
+        Ok(())
+    }
+
+    fn wow_size(&self) -> usize {
+        8
+    }
+}
+
 impl WowHeaderR for f32 {
     fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
         Ok(reader.read_f32::<LittleEndian>()?)

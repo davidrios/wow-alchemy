@@ -3557,18 +3557,19 @@ dependencies = [
  "byteorder",
  "clap",
  "criterion",
+ "custom_debug",
  "directories",
  "env_logger",
  "log",
- "memmap2",
  "pretty_assertions",
- "rayon",
  "reqwest",
  "rusqlite",
- "serde",
  "tempfile",
  "test-case",
  "thiserror 2.0.16",
+ "wow-alchemy-data",
+ "wow-alchemy-data-derive",
+ "wow-alchemy-utils",
 ]
 
 [[package]]
