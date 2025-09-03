@@ -3562,6 +3562,7 @@ dependencies = [
  "env_logger",
  "log",
  "pretty_assertions",
+ "rayon",
  "reqwest",
  "rusqlite",
  "tempfile",

@@ -17,6 +17,7 @@ categories = ["game-development", "parser-implementations"]
 wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.1.0" }
 wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.1.0" }
 wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.1.0" }
+rayon = { workspace = true, optional = true }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
 byteorder = { workspace = true }
@@ -35,4 +36,5 @@ test-case = { workspace = true }
 
 [features]
 default = []
+parallel = ["dep:rayon"]
 trimmed-debug-output = ["wow-alchemy-utils/trimmed-debug-output"]

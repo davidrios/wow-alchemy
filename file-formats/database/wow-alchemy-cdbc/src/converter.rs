@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use rusqlite::{Connection, params_from_iter, types::ToSqlOutput};
 
 use crate::{
-    Error, LazyRecordIterator, Result, Value, WdbFile,
+    Error, Result, Value, WdbFile,
     dbd::{DbdFile, GameBuild, download::download_dbd, parse_dbd_file},
 };
 
@@ -115,7 +115,7 @@ pub fn make_insert_query(dbd: &DbdFile, table_name: &str) -> Result<String> {
     ))
 }
 
-pub fn flatten_values(item: Vec<Value>) -> Vec<ToSqlOutput<'static>> {
+pub fn flatten_values(item: &[Value]) -> Vec<ToSqlOutput<'static>> {
     let mut params = Vec::<ToSqlOutput>::new();
     for ii in item {
         match ii {
@@ -123,11 +123,11 @@ pub fn flatten_values(item: Vec<Value>) -> Vec<ToSqlOutput<'static>> {
                 for j in values {
                     match j {
                         crate::Value::Array(_) => unreachable!(),
-                        _ => params.push(j.into()),
+                        _ => params.push(j.clone().into()),
                     }
                 }
             }
-            _ => params.push(ii.into()),
+            _ => params.push(ii.clone().into()),
         }
     }
     params
@@ -189,14 +189,33 @@ pub fn convert_to_sqlite(
 
         let tx = conn.transaction()?;
 
-        let iter = LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
-        for (idx, values) in iter.enumerate() {
-            match values {
-                Ok(values) => {
-                    tx.execute(&insert_qr, params_from_iter(flatten_values(values)))?;
+        #[cfg(feature = "parallel")]
+        {
+            for chunk in crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb) {
+                for (idx, values) in chunk.iter().enumerate() {
+                    match values {
+                        Ok(values) => {
+                            tx.execute(&insert_qr, params_from_iter(flatten_values(values)))?;
+                        }
+                        Err(err) => {
+                            println!("{table_name}: item {idx} parse failed: {err}");
+                        }
+                    }
                 }
-                Err(err) => {
-                    println!("{table_name}: item {idx} parse failed: {err}");
+            }
+        }
+
+        #[cfg(not(feature = "parallel"))]
+        {
+            let iter = crate::LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
+            for (idx, values) in iter.enumerate() {
+                match values {
+                    Ok(values) => {
+                        tx.execute(&insert_qr, params_from_iter(flatten_values(&values)))?;
+                    }
+                    Err(err) => {
+                        println!("{table_name}: item {idx} parse failed: {err}");
+                    }
                 }
             }
         }
