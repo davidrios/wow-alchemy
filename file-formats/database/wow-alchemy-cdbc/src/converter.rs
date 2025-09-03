@@ -188,33 +188,36 @@ pub fn convert_to_sqlite(
         let insert_qr = make_insert_query(&dbd, &table_name)?;
 
         let tx = conn.transaction()?;
-
-        #[cfg(feature = "parallel")]
         {
-            for chunk in crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb) {
-                for (idx, values) in chunk.iter().enumerate() {
-                    match values {
-                        Ok(values) => {
-                            tx.execute(&insert_qr, params_from_iter(flatten_values(values)))?;
-                        }
-                        Err(err) => {
-                            println!("{table_name}: item {idx} parse failed: {err}");
+            let mut stmt = tx.prepare(&insert_qr)?;
+
+            #[cfg(feature = "parallel")]
+            {
+                for chunk in crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb) {
+                    for (idx, values) in chunk.iter().enumerate() {
+                        match values {
+                            Ok(values) => {
+                                stmt.execute(params_from_iter(flatten_values(values)))?;
+                            }
+                            Err(err) => {
+                                println!("{table_name}: item {idx} parse failed: {err}");
+                            }
                         }
                     }
                 }
             }
-        }
 
-        #[cfg(not(feature = "parallel"))]
-        {
-            let iter = crate::LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
-            for (idx, values) in iter.enumerate() {
-                match values {
-                    Ok(values) => {
-                        tx.execute(&insert_qr, params_from_iter(flatten_values(&values)))?;
-                    }
-                    Err(err) => {
-                        println!("{table_name}: item {idx} parse failed: {err}");
+            #[cfg(not(feature = "parallel"))]
+            {
+                let iter = crate::LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
+                for (idx, values) in iter.enumerate() {
+                    match values {
+                        Ok(values) => {
+                            stmt.execute(params_from_iter(flatten_values(&values)))?;
+                        }
+                        Err(err) => {
+                            println!("{table_name}: item {idx} parse failed: {err}");
+                        }
                     }
                 }
             }
