@@ -133,41 +133,79 @@ impl<R: Read + Seek> LazyRecordIterator<'_, R> {
 use std::path::Path;
 
 #[cfg(feature = "parallel")]
-pub fn process_parallel(
+pub fn process_parallel<F>(
     file_path: &Path,
     dbd_file: &DbdFile,
     wdb: &WdbFile,
-) -> Vec<Vec<Result<Vec<Value>>>> {
+    subchunk_size: usize,
+    f: F,
+) -> Result<()>
+where
+    F: FnMut(&[Result<Vec<Value>>]) -> Result<()> + Send,
+{
     use std::fs::File;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
     let chunks: usize = std::thread::available_parallelism().unwrap().into();
     let record_count = wdb.header.record_count as usize;
     let chunk_size = (record_count + (chunks - (record_count % chunks))) / chunks;
 
-    let mut results_chunks = Vec::with_capacity(chunks);
-    for _ in 0..chunks {
-        results_chunks.push(Vec::with_capacity(chunk_size))
-    }
+    let mut last_sent = vec![false; chunks];
+
+    let f = Arc::new(Mutex::new(f));
 
     rayon::scope(|s| {
-        for (idx, output_chunk) in results_chunks.iter_mut().enumerate() {
+        for (idx, failed) in last_sent.iter_mut().enumerate() {
+            let f = f.clone();
+
             s.spawn(move |_| {
                 let mut file = File::open(file_path).unwrap();
 
-                let iter = LazyRecordIterator::new_from_start(
+                let Ok(iter) = LazyRecordIterator::new_from_start(
                     &mut file,
                     dbd_file,
                     wdb,
                     idx * chunk_size,
                     chunk_size,
-                )
-                .unwrap();
+                ) else {
+                    *failed = true;
+                    return;
+                };
 
-                for item in iter {
-                    output_chunk.push(item);
+                let mut results = Vec::with_capacity(chunk_size);
+
+                for (j, item) in iter.enumerate() {
+                    results.push(item);
+
+                    if j % subchunk_size == 0 && j > 0 {
+                        if let Ok(mut f) = f.try_lock() {
+                            if f(&results).is_err() {
+                                *failed = true;
+                                return;
+                            }
+
+                            results.clear();
+                        }
+                    }
+                }
+
+                if let Ok(mut f) = f.lock() {
+                    if f(&results).is_err() {
+                        *failed = true;
+                    }
+                } else {
+                    *failed = true;
                 }
             });
         }
     });
 
-    results_chunks
+    for is_failed in last_sent {
+        if is_failed {
+            return Err(Error::GenericError("failed to process".into()));
+        }
+    }
+
+    Ok(())
 }

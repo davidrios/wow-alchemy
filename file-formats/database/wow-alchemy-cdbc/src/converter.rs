@@ -146,7 +146,7 @@ pub fn convert_to_sqlite(
 
     fs::remove_file(output_sqlite).ok();
 
-    let mut conn = Connection::open(output_sqlite)?;
+    let conn = Connection::open(output_sqlite)?;
 
     for dir_entry in root_dir {
         let Ok(dir_entry) = dir_entry else { continue };
@@ -187,11 +187,12 @@ pub fn convert_to_sqlite(
 
         let insert_qr = make_insert_query(&dbd, &table_name)?;
 
-        let tx = conn.transaction()?;
-
         #[cfg(feature = "parallel")]
         {
-            for chunk in crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb) {
+            crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb, 10, |chunk| {
+                let mut conn = Connection::open(output_sqlite)?;
+                let tx = conn.transaction()?;
+
                 for (idx, values) in chunk.iter().enumerate() {
                     match values {
                         Ok(values) => {
@@ -202,11 +203,17 @@ pub fn convert_to_sqlite(
                         }
                     }
                 }
-            }
+
+                tx.commit()?;
+                Ok(())
+            })?;
         }
 
         #[cfg(not(feature = "parallel"))]
         {
+            let mut conn = Connection::open(output_sqlite)?;
+            let tx = conn.transaction()?;
+
             let iter = crate::LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
             for (idx, values) in iter.enumerate() {
                 match values {
@@ -218,9 +225,9 @@ pub fn convert_to_sqlite(
                     }
                 }
             }
-        }
 
-        tx.commit()?;
+            tx.commit()?;
+        }
     }
 
     Ok(())
