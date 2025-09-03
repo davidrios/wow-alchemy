@@ -1,11 +1,25 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
 
 use rusqlite::{Connection, params_from_iter, types::ToSqlOutput};
 
 use crate::{
-    Error, LazyRecordIterator, Result, WdbFile,
+    Error, LazyRecordIterator, Result, Value, WdbFile,
     dbd::{DbdFile, GameBuild, download::download_dbd, parse_dbd_file},
 };
+
+pub fn base_type_to_sqlite_type(base_type: &str) -> Result<&str> {
+    Ok(match base_type {
+        "locstring" | "string" => "text",
+        "int" => "integer",
+        "float" => "real",
+        _ => {
+            return Err(Error::SqliteTableDefinition(format!(
+                "unsupported base type {}",
+                base_type
+            )));
+        }
+    })
+}
 
 pub fn make_table_definition(dbd: &DbdFile, table_name: &str) -> Result<String> {
     let mut table_cols = Vec::new();
@@ -21,35 +35,40 @@ pub fn make_table_definition(dbd: &DbdFile, table_name: &str) -> Result<String> 
             )));
         };
 
-        let mut sqlite_type = match column.base_type.as_str() {
-            "locstring" | "string" => "text",
-            "int" => "integer",
-            "float" => "real",
-            _ => {
-                return Err(Error::SqliteTableDefinition(format!(
-                    "unsupported base type {}",
-                    column.base_type
-                )));
-            }
-        };
         if field.is_array {
-            sqlite_type = "text";
-        } else if let Some(fk) = &column.foreign_key {
-            table_fks.push(format!(
-                "foreign key (\"{}\") references {}(\"{}\")",
-                field_name,
-                fk.table.to_lowercase(),
-                fk.field.to_lowercase()
-            ));
-        }
+            let sqlite_type = base_type_to_sqlite_type(&column.base_type)?;
+            for i in 0..field.array_size.unwrap() {
+                let col_def = format!("\"{}_{}\" {}", field_name, i, sqlite_type,);
+                table_cols.push(col_def);
 
-        let col_def = format!(
-            "\"{}\" {}{}",
-            field_name,
-            sqlite_type,
-            if field.is_key { " primary key" } else { "" }
-        );
-        table_cols.push(col_def);
+                if let Some(fk) = &column.foreign_key {
+                    table_fks.push(format!(
+                        "foreign key (\"{}_{}\") references {}(\"{}\")",
+                        field_name,
+                        i,
+                        fk.table.to_lowercase(),
+                        fk.field.to_lowercase()
+                    ));
+                }
+            }
+        } else {
+            let col_def = format!(
+                "\"{}\" {}{}",
+                field_name,
+                base_type_to_sqlite_type(&column.base_type)?,
+                if field.is_key { " primary key" } else { "" }
+            );
+            table_cols.push(col_def);
+
+            if let Some(fk) = &column.foreign_key {
+                table_fks.push(format!(
+                    "foreign key (\"{}\") references {}(\"{}\")",
+                    field_name,
+                    fk.table.to_lowercase(),
+                    fk.field.to_lowercase()
+                ));
+            }
+        }
     }
 
     Ok(format!(
@@ -73,9 +92,19 @@ pub fn make_insert_query(dbd: &DbdFile, table_name: &str) -> Result<String> {
             )));
         };
 
-        let col_def = format!("\"{}\"", field.name.to_lowercase());
-        table_cols.push(col_def);
-        row_params.push("?");
+        let field_name = field.name.to_lowercase();
+
+        if field.is_array {
+            for i in 0..field.array_size.unwrap() {
+                let col_def = format!("\"{}_{}\"", field_name, i);
+                table_cols.push(col_def);
+                row_params.push("?");
+            }
+        } else {
+            let col_def = format!("\"{}\"", field_name);
+            table_cols.push(col_def);
+            row_params.push("?");
+        }
     }
 
     Ok(format!(
@@ -84,6 +113,24 @@ pub fn make_insert_query(dbd: &DbdFile, table_name: &str) -> Result<String> {
         table_cols.join(","),
         row_params.join(",")
     ))
+}
+
+pub fn flatten_values(item: Vec<Value>) -> Vec<ToSqlOutput<'static>> {
+    let mut params = Vec::<ToSqlOutput>::new();
+    for ii in item {
+        match ii {
+            crate::Value::Array(values) => {
+                for j in values {
+                    match j {
+                        crate::Value::Array(_) => unreachable!(),
+                        _ => params.push(j.into()),
+                    }
+                }
+            }
+            _ => params.push(ii.into()),
+        }
+    }
+    params
 }
 
 /// Convert all dbc files in a folder to a single SQLite database file
@@ -99,9 +146,8 @@ pub fn convert_to_sqlite(
 
     fs::remove_file(output_sqlite).ok();
 
-    let conn = Connection::open(output_sqlite)?;
+    let mut conn = Connection::open(output_sqlite)?;
 
-    let mut dbd_files = HashMap::new();
     for dir_entry in root_dir {
         let Ok(dir_entry) = dir_entry else { continue };
         let filename: String = dir_entry.file_name().to_string_lossy().into();
@@ -141,18 +187,13 @@ pub fn convert_to_sqlite(
 
         let insert_qr = make_insert_query(&dbd, &table_name)?;
 
+        let tx = conn.transaction()?;
+
         let iter = LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
-        for (idx, item) in iter.enumerate() {
-            match item {
-                Ok(item) => {
-                    conn.execute(
-                        &insert_qr,
-                        params_from_iter(
-                            item.iter()
-                                .map(|i| i.clone().into())
-                                .collect::<Vec<ToSqlOutput>>(),
-                        ),
-                    )?;
+        for (idx, values) in iter.enumerate() {
+            match values {
+                Ok(values) => {
+                    tx.execute(&insert_qr, params_from_iter(flatten_values(values)))?;
                 }
                 Err(err) => {
                     println!("{table_name}: item {idx} parse failed: {err}");
@@ -160,7 +201,7 @@ pub fn convert_to_sqlite(
             }
         }
 
-        dbd_files.insert(filename.to_owned(), dbd_file);
+        tx.commit()?;
     }
 
     Ok(())
