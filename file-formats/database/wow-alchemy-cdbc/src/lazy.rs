@@ -151,12 +151,12 @@ where
     let record_count = wdb.header.record_count as usize;
     let chunk_size = (record_count + (chunks - (record_count % chunks))) / chunks;
 
-    let mut last_sent = vec![false; chunks];
+    let mut last_sent = vec![0_i32; chunks];
 
     let f = Arc::new(Mutex::new(f));
 
     rayon::scope(|s| {
-        for (idx, failed) in last_sent.iter_mut().enumerate() {
+        for (idx, last_sent) in last_sent.iter_mut().enumerate() {
             let f = f.clone();
 
             s.spawn(move |_| {
@@ -169,7 +169,7 @@ where
                     idx * chunk_size,
                     chunk_size,
                 ) else {
-                    *failed = true;
+                    *last_sent = -1;
                     return;
                 };
 
@@ -180,29 +180,35 @@ where
 
                     if j % subchunk_size == 0 && j > 0 {
                         if let Ok(mut f) = f.try_lock() {
-                            if f(&results).is_err() {
-                                *failed = true;
+                            if let Err(err) = f(&results[(*last_sent as usize)..j]) {
+                                println!("{}", err);
+                                *last_sent = -1;
                                 return;
                             }
 
-                            results.clear();
+                            *last_sent = j as i32;
                         }
                     }
                 }
 
-                if let Ok(mut f) = f.lock() {
-                    if f(&results).is_err() {
-                        *failed = true;
+                match f.lock() {
+                    Ok(mut f) => {
+                        if let Err(err) = f(&results[(*last_sent as usize)..]) {
+                            println!("{}", err);
+                            *last_sent = -1;
+                        }
                     }
-                } else {
-                    *failed = true;
+                    Err(err) => {
+                        println!("{}", err);
+                        *last_sent = -1;
+                    }
                 }
             });
         }
     });
 
     for is_failed in last_sent {
-        if is_failed {
+        if is_failed == -1 {
             return Err(Error::GenericError("failed to process".into()));
         }
     }

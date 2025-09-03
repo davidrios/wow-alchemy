@@ -189,7 +189,7 @@ pub fn convert_to_sqlite(
 
         #[cfg(feature = "parallel")]
         {
-            crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb, 10, |chunk| {
+            crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb, 20, |chunk| {
                 let mut conn = Connection::open(output_sqlite)?;
                 let tx = conn.transaction()?;
 
