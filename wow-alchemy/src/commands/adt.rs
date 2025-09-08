@@ -46,7 +46,6 @@ pub enum AdtCommands {
     },
 
     /// Extract data from ADT files
-    #[cfg(feature = "extract")]
     Extract {
         /// Path to the ADT file
         file: String,
@@ -103,7 +102,6 @@ pub enum AdtCommands {
     },
 
     /// Batch process multiple ADT files
-    #[cfg(feature = "parallel")]
     Batch {
         /// Input pattern (e.g., "*.adt" or "World/Maps/Azeroth/*.adt")
         pattern: String,
@@ -135,7 +133,6 @@ pub fn execute(command: AdtCommands) -> Result<()> {
             warnings,
         } => execute_validate(&file, &level, warnings),
         AdtCommands::Convert { input, output, to } => execute_convert(&input, &output, &to),
-        #[cfg(feature = "extract")]
         AdtCommands::Extract {
             file,
             output,
@@ -160,7 +157,6 @@ pub fn execute(command: AdtCommands) -> Result<()> {
             no_metadata,
             compact,
         } => execute_tree(&file, depth, show_refs, no_color, no_metadata, compact),
-        #[cfg(feature = "parallel")]
         AdtCommands::Batch {
             pattern,
             output,
@@ -379,7 +375,6 @@ fn execute_convert(input: &str, output: &str, to_version: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "extract")]
 fn execute_extract(
     file: &str,
     output_dir: Option<&str>,
@@ -465,12 +460,6 @@ fn execute_extract(
     println!("\n✅ Extraction complete!");
 
     Ok(())
-}
-
-#[cfg(not(feature = "extract"))]
-#[allow(dead_code)]
-fn execute_extract(_: &str, _: Option<&str>, _: bool, _: &str, _: bool, _: bool) -> Result<()> {
-    anyhow::bail!("Extract command requires the 'extract' feature to be enabled")
 }
 
 fn execute_tree(
@@ -715,7 +704,6 @@ fn execute_tree(
     Ok(())
 }
 
-#[cfg(feature = "parallel")]
 fn execute_batch(
     pattern: &str,
     output_dir: &str,
@@ -822,12 +810,6 @@ fn execute_batch(
     }
 
     Ok(())
-}
-
-#[cfg(not(feature = "parallel"))]
-#[allow(dead_code)]
-fn execute_batch(_: &str, _: &str, _: &str, _: Option<&str>, _: Option<usize>) -> Result<()> {
-    anyhow::bail!("Batch command requires the 'parallel' feature to be enabled")
 }
 
 // Helper functions

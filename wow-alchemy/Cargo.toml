@@ -54,29 +54,25 @@ serde_json = { workspace = true, optional = true }
 
 [features]
 default = ["dbc", "blp", "m2", "wmo", "adt", "wdt", "wdl"]
-full = [
-  "dbc",
-  "blp",
-  "m2",
-  "wmo",
-  "adt",
-  "wdt",
-  "wdl",
-  "serde",
-  "extract",
-  "parallel",
+dbc = [
+  "dep:wow-alchemy-cdbc",
+  "wow-alchemy-cdbc/sqlite",
+  "wow-alchemy-cdbc/sqlite_bundled",
+  "wow-alchemy-cdbc/parallel",
 ]
-dbc = ["dep:wow-alchemy-cdbc"]
 blp = ["dep:wow-alchemy-blp", "dep:image"]
 m2 = ["dep:wow-alchemy-m2", "dep:wow-alchemy-data"]
 wmo = ["dep:wow-alchemy-wmo"]
-adt = ["dep:wow-alchemy-adt"]
+adt = [
+  "dep:wow-alchemy-adt",
+  "wow-alchemy-adt/extract",
+  "wow-alchemy-adt/parallel",
+  "parallel"
+]
 wdt = ["dep:wow-alchemy-wdt", "serde"]
 wdl = ["dep:wow-alchemy-wdl"]
 serde = ["dep:serde", "dep:serde_json"]
-extract = ["wow-alchemy-adt?/extract"]
-parallel = ["wow-alchemy-adt?/parallel", "wow-alchemy-cdbc?/parallel", "dep:rayon"]
-sqlite = ["wow-alchemy-cdbc?/sqlite"]
+parallel = ["dep:rayon"]
 
 [[bin]]
 name = "wow-alchemy"

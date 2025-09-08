@@ -145,6 +145,7 @@ pub fn convert_to_sqlite(
     fs::remove_file(output_sqlite).ok();
 
     let mut conn = Connection::open(output_sqlite)?;
+    conn.execute("PRAGMA foreign_keys = OFF;", [])?;
 
     for dir_entry in root_dir {
         let Ok(dir_entry) = dir_entry else { continue };

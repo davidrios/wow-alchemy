@@ -405,24 +405,17 @@ fn execute_tiles(path: PathBuf, version_str: String, format: String) -> Result<(
 
     match format.as_str() {
         "json" => {
-            #[cfg(feature = "serde")]
-            {
-                let json_tiles: Vec<_> = tiles
-                    .iter()
-                    .map(|(x, y, area_id)| {
-                        serde_json::json!({
-                            "x": x,
-                            "y": y,
-                            "area_id": area_id,
-                        })
+            let json_tiles: Vec<_> = tiles
+                .iter()
+                .map(|(x, y, area_id)| {
+                    serde_json::json!({
+                        "x": x,
+                        "y": y,
+                        "area_id": area_id,
                     })
-                    .collect();
-                println!("{}", serde_json::to_string_pretty(&json_tiles)?);
-            }
-            #[cfg(not(feature = "serde"))]
-            {
-                anyhow::bail!("JSON output requires the 'serde' feature to be enabled");
-            }
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_tiles)?);
         }
         "csv" => {
             println!("x,y,area_id");
