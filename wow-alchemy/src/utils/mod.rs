@@ -32,7 +32,6 @@ pub mod table;
     feature = "adt",
     feature = "wdt",
     feature = "wdl",
-    test
 ))]
 pub mod tree;
 
