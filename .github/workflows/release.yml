@@ -111,6 +111,12 @@ jobs:
             echo "::warning::DRY RUN MODE - No actual publishing will occur"
           fi
 
+      - name: Verify versions match
+        run: |
+          VERSION="${{ needs.determine.outputs.version }}"
+          ./verify-tag.sh "$VERSION" || exit 1
+
+
   # Release libraries to crates.io
   release-libraries:
     name: Release Libraries
@@ -128,17 +134,6 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Verify versions match
-        run: |
-          VERSION="${{ needs.determine-release-type.outputs.version }}"
-          for crate in wow-alchemy-adt wow-alchemy-wdl wow-alchemy-wdt wow-alchemy-blp wow-alchemy-m2 wow-alchemy-wmo wow-alchemy-cdbc wow-alchemy; do
-            CRATE_VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r ".packages[] | select(.name == \"$crate\") | .version")
-            if [[ "$CRATE_VERSION" != "$VERSION" ]]; then
-              echo "Version mismatch for $crate: expected $VERSION, found $CRATE_VERSION"
-              exit 1
-            fi
-          done
 
       - name: Run tests
         if: needs.determine-release-type.outputs.skip-tests != 'true'
@@ -209,6 +204,9 @@ jobs:
             ## Library Release v${{ needs.determine-release-type.outputs.version }}
 
             This release includes updates to all wow-alchemy libraries:
+            - wow-alchemy-utils
+            - wow-alchemy-data-derive
+            - wow-alchemy-data
             - wow-alchemy-blp - BLP texture support
             - wow-alchemy-m2 - M2 model support
             - wow-alchemy-wmo - WMO world map object support
