@@ -30,7 +30,6 @@ pub fn download_dbd(file_name: &str) -> Result<PathBuf> {
             "https://raw.githubusercontent.com/wowdev/WoWDBDefs/refs/heads/master/definitions/{}",
             dbd_file_name
         );
-        dbg!(&dbd_file_url);
         let response = reqwest::blocking::get(dbd_file_url)?;
         let content = response.bytes()?;
 

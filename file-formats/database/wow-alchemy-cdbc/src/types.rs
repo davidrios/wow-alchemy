@@ -1,5 +1,6 @@
 use std::fmt;
 
+#[cfg(feature = "sqlite")]
 use rusqlite::types::ToSqlOutput;
 
 pub type Key = u32;
@@ -61,6 +62,7 @@ impl fmt::Display for Value {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl From<Value> for ToSqlOutput<'_> {
     fn from(value: Value) -> Self {
         match value {

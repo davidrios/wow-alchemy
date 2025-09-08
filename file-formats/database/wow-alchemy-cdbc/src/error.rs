@@ -10,6 +10,7 @@ pub enum Error {
     #[error("Request error: {0}")]
     Reqwest(#[from] reqwest::Error),
 
+    #[cfg(feature = "sqlite")]
     #[error("Rusqlite error: {0}")]
     Rusqlite(#[from] rusqlite::Error),
 

@@ -98,10 +98,6 @@ jobs:
             os: ubuntu-latest
             use_cross: true
             archive: tar.gz
-          - target: armv7-unknown-linux-musleabihf
-            os: ubuntu-latest
-            use_cross: true
-            archive: tar.gz
 
           # Windows
           - target: x86_64-pc-windows-msvc
@@ -256,7 +252,7 @@ jobs:
 
           ### Supported Platforms
 
-          - Linux: x86_64, aarch64, armv7 (GNU and musl)
+          - Linux: x86_64, aarch64 (GNU and musl)
           - Windows: x86_64, aarch64 (MSVC)
           - macOS: x86_64, aarch64
 

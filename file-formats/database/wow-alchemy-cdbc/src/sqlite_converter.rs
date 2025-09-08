@@ -28,7 +28,6 @@ pub fn make_table_definition(dbd: &DbdFile, table_name: &str) -> Result<String> 
         let field_name = field.name.to_lowercase();
 
         let Some(column) = &dbd.columns.get(&field.name) else {
-            dbg!(&dbd);
             return Err(Error::SqliteTableDefinition(format!(
                 "column not found: {}",
                 field.name
@@ -85,7 +84,6 @@ pub fn make_insert_query(dbd: &DbdFile, table_name: &str) -> Result<String> {
     let mut row_params = Vec::new();
     for field in &dbd.build.fields {
         if !dbd.columns.contains_key(&field.name) {
-            dbg!(&dbd);
             return Err(Error::SqliteTableDefinition(format!(
                 "column not found: {}",
                 field.name
@@ -152,6 +150,7 @@ pub fn convert_to_sqlite(
         let Ok(dir_entry) = dir_entry else { continue };
         let filename: String = dir_entry.file_name().to_string_lossy().into();
 
+        log::info!("Converting table: {filename:?}");
         let dbd_file = match download_dbd(&filename) {
             Ok(dbd_file) => dbd_file,
             Err(err) => {

@@ -4,8 +4,10 @@ mod lazy;
 mod types;
 mod wdb;
 
-pub mod converter;
 pub mod dbd;
+
+#[cfg(feature = "sqlite")]
+pub mod sqlite_converter;
 
 pub use error::Error;
 pub use lazy::LazyRecordIterator;

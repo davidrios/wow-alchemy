@@ -75,7 +75,8 @@ wdt = ["dep:wow-alchemy-wdt", "serde"]
 wdl = ["dep:wow-alchemy-wdl"]
 serde = ["dep:serde", "dep:serde_json"]
 extract = ["wow-alchemy-adt?/extract"]
-parallel = ["wow-alchemy-adt?/parallel", "dep:rayon"]
+parallel = ["wow-alchemy-adt?/parallel", "wow-alchemy-cdbc?/parallel", "dep:rayon"]
+sqlite = ["wow-alchemy-cdbc?/sqlite"]
 
 [[bin]]
 name = "wow-alchemy"

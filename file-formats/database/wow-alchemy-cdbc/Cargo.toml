@@ -25,8 +25,8 @@ log = { workspace = true }
 clap = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 directories = "6.0.0"
-reqwest = { version = "0.12.23", features = ["blocking"] }
-rusqlite = "0.37.0"
+reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls", "blocking"] }
+rusqlite = { version = "0.37.0", optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -36,5 +36,6 @@ test-case = { workspace = true }
 
 [features]
 default = []
+sqlite = ["dep:rusqlite"]
 parallel = ["dep:rayon"]
 trimmed-debug-output = ["wow-alchemy-utils/trimmed-debug-output"]
