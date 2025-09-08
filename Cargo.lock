@@ -3486,7 +3486,7 @@ checksum = "052283831dbae3d879dc7f51f3d92703a316ca49f91540417d38591826127814"
 
 [[package]]
 name = "wow-alchemy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-adt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "image",
@@ -3533,7 +3533,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-blp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "color_quant",
@@ -3552,7 +3552,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-cdbc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "byteorder",
  "clap",
@@ -3575,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-data"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "byteorder",
  "custom_debug",
@@ -3586,7 +3586,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-data-derive"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-m2"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bitflags 2.9.3",
@@ -3621,14 +3621,14 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-utils"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "custom_debug",
 ]
 
 [[package]]
 name = "wow-alchemy-wdl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "memchr",
@@ -3637,7 +3637,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-wdt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bitflags 2.9.3",
@@ -3651,7 +3651,7 @@ dependencies = [
 
 [[package]]
 name = "wow-alchemy-wmo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitflags 2.9.3",
  "criterion",

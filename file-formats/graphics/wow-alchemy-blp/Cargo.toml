@@ -1,6 +1,6 @@
 [package]
 name = "wow-alchemy-blp"
-version = "0.1.0"
+version = "0.2.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ keywords = ["wow", "warcraft", "blp", "texture", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.1.0" }
+wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
