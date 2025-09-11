@@ -17,7 +17,6 @@ categories = ["game-development", "parser-implementations"]
 wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
 wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
 wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
-wow-alchemy-blp = { path = "../wow-alchemy-blp", version = "0.2.0" }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
 bitflags = { workspace = true }
