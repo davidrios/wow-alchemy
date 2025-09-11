@@ -116,7 +116,7 @@ jobs:
 
       - name: Verify versions match
         run: |
-          VERSION="${{ needs.determine.outputs.version }}"
+          VERSION="${{ steps.determine.outputs.version }}"
           ./verify-tag.sh "$VERSION" || exit 1
 
 
