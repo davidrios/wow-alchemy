@@ -18,27 +18,13 @@ wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
 wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
 wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
 wow-alchemy-blp = { path = "../wow-alchemy-blp", version = "0.2.0" }
-byteorder = { workspace = true }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
-log = { workspace = true }
-bytes = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
-memchr = { workspace = true }
 bitflags = { workspace = true }
-glam = { workspace = true }
-anyhow = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-tempfile = { workspace = true }
-env_logger = { workspace = true }
-pretty_assertions = { workspace = true }
-test-case = { workspace = true }
-rstest = { workspace = true }
 
 [features]
 default = []
-serde-support = ["serde", "glam/serde"]
 trimmed-debug-output = ["wow-alchemy-utils/trimmed-debug-output"]
 
