@@ -22,7 +22,7 @@ Todo...
 
 ### Binary Releases
 
-Pre-built binaries are available for Linux, macOS, and Windows, check the [releases page](/davidrios/wow-alchemy/releases).
+Pre-built binaries are available for Linux, macOS, and Windows, check the [releases page](https://github.com/davidrios/wow-alchemy/releases).
 
 
 ### From crates.io
