@@ -1,4 +1,7 @@
-use crate::error::Result;
+use crate::{
+    error::{Result, WowDataError},
+    types::DataVersion,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameVersion {
@@ -20,16 +23,13 @@ impl GameVersion {
     pub fn from_string(s: &str) -> Result<Self> {
         let parts: Vec<&str> = s.split('.').collect();
         if parts.is_empty() {
-            return Err(crate::error::M2Error::UnsupportedVersion(format!(
+            return Err(WowDataError::GenericError(format!(
                 "Invalid version string: {s}"
             )));
         }
 
         let major = parts[0].parse::<u32>().map_err(|_| {
-            crate::error::M2Error::UnsupportedVersion(format!(
-                "Invalid major version: {}",
-                parts[0]
-            ))
+            WowDataError::GenericError(format!("Invalid major version: {}", parts[0]))
         })?;
 
         Ok(match major {
@@ -45,7 +45,7 @@ impl GameVersion {
             10 => GameVersion::Dragonflight,
             11 => GameVersion::TheWarWithin,
             _ => {
-                return Err(crate::error::M2Error::UnsupportedVersion(format!(
+                return Err(WowDataError::GenericError(format!(
                     "Unknown WoW version: {major}"
                 )));
             }
@@ -120,6 +120,8 @@ impl std::fmt::Display for GameVersion {
         )
     }
 }
+
+impl DataVersion for GameVersion {}
 
 #[cfg(test)]
 mod tests {

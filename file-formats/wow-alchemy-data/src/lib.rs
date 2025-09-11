@@ -1,4 +1,5 @@
 pub mod error;
+pub mod game_version;
 pub mod std_impls;
 pub mod types;
 pub mod utils;
