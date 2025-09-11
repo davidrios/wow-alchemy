@@ -66,10 +66,3 @@ pub enum Commands {
     },
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_dummy() {
-        dbg!("make the ci happy");
-    }
-}

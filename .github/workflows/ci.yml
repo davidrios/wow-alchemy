@@ -196,11 +196,11 @@ jobs:
 
       # Test with all features
       - name: Test all features (changed crates)
-        run: cargo nextest run --all-features ${{ steps.test-scope.outputs.test_args }}
+        run: cargo nextest run --all-features ${{ steps.test-scope.outputs.test_args }} --no-tests pass
 
       # Test with no default features
       - name: Test no default features (changed crates)
-        run: cargo nextest run --no-default-features ${{ steps.test-scope.outputs.test_args }}
+        run: cargo nextest run --no-default-features ${{ steps.test-scope.outputs.test_args }} --no-tests pass
 
       # Test each changed crate individually (only on stable Linux)
       - name: Test individual changed crates
@@ -210,7 +210,7 @@ jobs:
         run: |
           for crate in $CRATES_CHANGED; do
             echo "Testing $crate individually..."
-            cargo nextest run -p $crate --all-features
+            cargo nextest run -p $crate --all-features --no-tests pass
           done
 
   # Documentation build - runs in parallel
