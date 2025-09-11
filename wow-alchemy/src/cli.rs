@@ -65,4 +65,3 @@ pub enum Commands {
         shell: clap_complete::Shell,
     },
 }
-
