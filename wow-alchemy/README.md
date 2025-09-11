@@ -15,7 +15,7 @@ Unified command-line tool for working with World of Warcraft file formats.
 
 ```bash
 # Install with all features
-cargo install wow-alchemy --features full
+cargo install wow-alchemy
 
 # Or install with specific features only
 cargo install wow-alchemy --features "dbc"
@@ -29,7 +29,7 @@ git clone https://github.com/davidrios/wow-alchemy
 cd wow-alchemy/wow-alchemy
 
 # Build with all features
-cargo build --release --features full
+cargo build --release
 
 # Or build with specific features only
 cargo build --release --features "dbc"
@@ -41,7 +41,7 @@ cargo build --release --features "dbc"
 
 ```bash
 # Install with all formats
-cargo install --path . --features full
+cargo install --path .
 
 # Or with specific formats only
 cargo install --path . --features "blp"
@@ -94,7 +94,6 @@ wow-alchemy completions powershell > _wow-alchemy.ps1
 The CLI can be built with different feature flags to include only the formats you
 need:
 
-- `full` - Includes all format support
 - `dbc` - DBC database support
 - `blp` - BLP texture support
 - `m2` - M2 model support
