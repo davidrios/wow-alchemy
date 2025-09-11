@@ -111,6 +111,9 @@ jobs:
             echo "::warning::DRY RUN MODE - No actual publishing will occur"
           fi
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Verify versions match
         run: |
           VERSION="${{ needs.determine.outputs.version }}"
