@@ -6,13 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.0] - 2025-09-08
+## [0.2.0] - 2025-09-10
+
+- Changed default features of the main CLI to include everything
+
 
 ### wow-alchemy-cdbc
 
 - Entirely refactored DBC files handling
 - Implemented downloading and using DBD files for parsing
-- Implemented converting to SQLite as the only exporting option
+- Implemented converting to SQLite as the only export option
 
 
 ## [0.1.0] - 2025-08-30
