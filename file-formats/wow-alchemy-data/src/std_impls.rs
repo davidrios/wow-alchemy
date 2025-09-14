@@ -172,6 +172,24 @@ impl WowHeaderW for [u8; 2] {
     }
 }
 
+impl WowHeaderR for [u8; 3] {
+    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+        Ok([reader.read_u8()?, reader.read_u8()?, reader.read_u8()?])
+    }
+}
+impl WowHeaderW for [u8; 3] {
+    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
+        for i in 0..3 {
+            writer.write_u8((*self)[i])?;
+        }
+        Ok(())
+    }
+
+    fn wow_size(&self) -> usize {
+        3
+    }
+}
+
 impl WowHeaderR for [u8; 4] {
     fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
         Ok([

@@ -188,6 +188,10 @@ where
         reader: &mut R,
         chunk_header: &ChunkHeader,
     ) -> Result<Vec<Self>> {
+        if chunk_header.bytes == 0 {
+            return Ok(Vec::with_capacity(0));
+        }
+
         let first: W = reader.wow_read()?;
         let item_size = first.wow_size();
         let items = chunk_header.bytes as usize / item_size;
@@ -223,6 +227,23 @@ where
 {
     fn wow_read_from_chunk(&mut self, chunk_header: &ChunkHeader) -> Result<Vec<T>> {
         T::wow_read_from_chunk(self, chunk_header)
+    }
+
+    fn wow_read_from_chunk_maybe_single(
+        &mut self,
+        chunk_header: &ChunkHeader,
+    ) -> Result<Option<T>> {
+        Ok(T::wow_read_from_chunk(self, chunk_header)?.pop())
+    }
+
+    fn wow_read_from_chunk_single(&mut self, chunk_header: &ChunkHeader) -> Result<T> {
+        if let Some(val) = self.wow_read_from_chunk_maybe_single(chunk_header)? {
+            Ok(val)
+        } else {
+            Err(WowDataError::GenericError(
+                "Error extracting single chunk data".into(),
+            ))
+        }
     }
 }
 impl<T, R> WowReaderForChunk<T> for R

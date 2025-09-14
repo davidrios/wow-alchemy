@@ -63,12 +63,7 @@ dbc = [
 blp = ["dep:wow-alchemy-blp", "dep:image"]
 m2 = ["dep:wow-alchemy-m2", "dep:wow-alchemy-data"]
 wmo = ["dep:wow-alchemy-wmo"]
-adt = [
-  "dep:wow-alchemy-adt",
-  "wow-alchemy-adt/extract",
-  "wow-alchemy-adt/parallel",
-  "parallel"
-]
+adt = ["dep:wow-alchemy-adt"]
 wdt = ["dep:wow-alchemy-wdt", "serde"]
 wdl = ["dep:wow-alchemy-wdl"]
 serde = ["dep:serde", "dep:serde_json"]

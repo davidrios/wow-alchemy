@@ -55,62 +55,70 @@ macro_rules! v_wow_collection {
 #[macro_export]
 macro_rules! read_chunk_items {
     ($reader:ident, $chunk_header:ident, $type:ty) => {{
-        let first: $type = $reader.wow_read()?;
-        let item_size = first.wow_size();
-        let items = $chunk_header.bytes as usize / item_size;
+        if $chunk_header.bytes == 0 {
+            Vec::<$type>::with_capacity(0)
+        } else {
+            let first: $type = $reader.wow_read()?;
+            let item_size = first.wow_size();
+            let items = $chunk_header.bytes as usize / item_size;
 
-        let rest = $chunk_header.bytes as usize % item_size;
-        if rest > 0 {
-            dbg!(format!(
-                "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
-                String::from_utf8_lossy(&$chunk_header.magic),
-                item_size,
-                items,
-                rest
-            ));
+            let rest = $chunk_header.bytes as usize % item_size;
+            if rest > 0 {
+                dbg!(format!(
+                    "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
+                    String::from_utf8_lossy(&$chunk_header.magic),
+                    item_size,
+                    items,
+                    rest
+                ));
+            }
+
+            let mut vec = Vec::<$type>::with_capacity(items);
+            vec.push(first);
+
+            for _ in 1..items {
+                vec.push($reader.wow_read()?);
+            }
+
+            $reader.seek_relative(rest as i64)?;
+
+            vec
         }
-
-        let mut vec = Vec::<$type>::with_capacity(items);
-        vec.push(first);
-
-        for _ in 1..items {
-            vec.push($reader.wow_read()?);
-        }
-
-        $reader.seek_relative(rest as i64)?;
-
-        vec
     }};
 }
 
 #[macro_export]
 macro_rules! v_read_chunk_items {
     ($reader:ident, $version:ident, $chunk_header:ident, $type:ty) => {{
-        let first: $type = $reader.wow_read_versioned($version)?;
-        let item_size = first.wow_size();
-        let items = $chunk_header.bytes as usize / item_size;
+        if $chunk_header.bytes == 0 {
+            Vec::<$type>::with_capacity(0)
+        } else {
+            let first: $type = $reader.wow_read_versioned($version)?;
+            let item_size = first.wow_size();
+            let items = $chunk_header.bytes as usize / item_size;
 
-        let rest = $chunk_header.bytes as usize % item_size;
-        if rest > 0 {
-            dbg!(format!(
-                "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
-                String::from_utf8_lossy(&$chunk_header.magic),
-                item_size,
-                items,
-                rest
-            ));
+            let rest = $chunk_header.bytes as usize % item_size;
+            if rest > 0 {
+                dbg!(format!(
+                    "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
+                    String::from_utf8_lossy(&$chunk_header.magic),
+                    item_size,
+                    items,
+                    rest
+                ));
+            }
+
+            let mut vec = Vec::<$type>::with_capacity(items);
+            vec.push(first);
+
+            for _ in 1..items {
+                vec.push($reader.wow_read_versioned($version)?);
+            }
+
+            $reader.seek_relative(rest as i64)?;
+
+            vec
         }
-
-        let mut vec = Vec::<$type>::with_capacity(items);
-        vec.push(first);
-
-        for _ in 1..items {
-            vec.push($reader.wow_read_versioned($version)?);
-        }
-
-        $reader.seek_relative(rest as i64)?;
-
-        vec
     }};
 }
 
