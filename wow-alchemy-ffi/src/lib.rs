@@ -11,10 +11,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::Mutex;
 
-use wow_alchemy_blp::convert::blp_to_image;
+use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image};
 use wow_alchemy_blp::parser::load_blp_from_buf;
 use wow_alchemy_cdbc::WdbFile;
-use wow_mpq::PatchChain;
+use wow_alchemy_mpq::PatchChain;
+
+pub mod terrain;
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,7 +181,7 @@ pub unsafe extern "C" fn wa_mpq_chain_read(
                 unsafe { out.write(WaBuffer::from_vec(data)) };
                 Ok(WaStatus::Ok)
             }
-            Err(wow_mpq::Error::FileNotFound(_)) => Ok(WaStatus::NotFound),
+            Err(wow_alchemy_mpq::Error::FileNotFound(_)) => Ok(WaStatus::NotFound),
             Err(e) => Err(format!("{file_name}: {e}")),
         }
     })
@@ -234,6 +236,41 @@ pub unsafe extern "C" fn wa_blp_decode(
                 mip_count,
             })
         };
+        Ok(WaStatus::Ok)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_blp_size(
+    data: *const u8,
+    len: usize,
+    width: *mut u32,
+    height: *mut u32,
+) -> WaStatus {
+    guard(WaStatus::Error, || {
+        let bytes = unsafe { bytes_arg(data, len) }?;
+        let blp = load_blp_from_buf(bytes).map_err(|e| e.to_string())?;
+        unsafe {
+            width.write(blp.header.width);
+            height.write(blp.header.height);
+        }
+        Ok(WaStatus::Ok)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_blp_to_bc1(
+    data: *const u8,
+    len: usize,
+    size: u32,
+    out: *mut WaBuffer,
+) -> WaStatus {
+    guard(WaStatus::Error, || {
+        unsafe { out.write(WaBuffer::EMPTY) };
+        let bytes = unsafe { bytes_arg(data, len) }?;
+        let blp = load_blp_from_buf(bytes).map_err(|e| e.to_string())?;
+        let mipmaps = blp_to_bc1_mipmaps(&blp, size).map_err(|e| e.to_string())?;
+        unsafe { out.write(WaBuffer::from_vec(mipmaps)) };
         Ok(WaStatus::Ok)
     })
 }
@@ -353,7 +390,7 @@ pub unsafe extern "C" fn wa_dbc_get_string(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wow_mpq::ArchiveBuilder;
+    use wow_alchemy_mpq::ArchiveBuilder;
 
     /// Two records of [id, name]. "Forest" shares the tail of "Elwynn Forest".
     fn sample_dbc() -> Vec<u8> {

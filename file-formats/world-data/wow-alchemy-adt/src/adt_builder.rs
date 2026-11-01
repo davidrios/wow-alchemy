@@ -685,6 +685,8 @@ impl AdtBuilder {
                 doodad_refs: Vec::new(),
                 map_obj_refs: Vec::new(),
                 alpha_maps,
+                raw_alpha: Vec::new(),
+                raw_vertex_colors: Vec::new(),
                 mclq: None, // No liquid data in builder
             };
 

@@ -4,6 +4,9 @@ use thiserror::Error;
 /// Errors that can occur during BLP conversion operations
 #[derive(Debug, Error)]
 pub enum Error {
+    /// BC1 mipmap chains need a power of two size
+    #[error("{0} is not a power of two")]
+    InvalidBc1Size(u32),
     /// The requested mipmap level does not exist in the BLP file
     #[error("There is no image in the BLP mipmaps level {0}!")]
     MissingImage(usize),

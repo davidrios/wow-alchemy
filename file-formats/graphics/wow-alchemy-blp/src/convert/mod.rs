@@ -1,3 +1,4 @@
+mod bc1;
 mod dxtn;
 /// Conversion error types
 pub mod error;
@@ -10,6 +11,7 @@ mod raw3;
 use crate::types::*;
 use ::image::DynamicImage;
 pub use ::image::imageops::FilterType;
+pub use bc1::{bc1_mipmaps_size, blp_to_bc1_mipmaps};
 use dxtn::*;
 pub use error::Error;
 use jpeg::*;

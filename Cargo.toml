@@ -5,6 +5,9 @@ members = [
   "file-formats/wow-alchemy-data-derive",
   "wow-alchemy-utils",
 
+  # Archives
+  "file-formats/archives/wow-alchemy-mpq",
+
   # World Data
   "file-formats/world-data/wow-alchemy-adt",
   "file-formats/world-data/wow-alchemy-wdl",
@@ -75,3 +78,4 @@ assert_cmd = "2.0"
 predicates = "3.1"
 test-case = "3.3"
 rstest = "0.25.0"
+

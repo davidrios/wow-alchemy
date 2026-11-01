@@ -177,7 +177,7 @@ fn handle_info(path: PathBuf, detailed: bool) -> Result<()> {
 
     if detailed {
         println!("\n=== Detailed Information ===");
-        println!("{:#?}", &model);
+        println!("{:#?}", model);
     }
 
     Ok(())
@@ -268,7 +268,7 @@ fn handle_skin_info(path: PathBuf, detailed: bool, version: u32) -> Result<()> {
 
     if detailed {
         println!("\n=== Detailed Information ===");
-        println!("{:#?}", &skin);
+        println!("{:#?}", skin);
     }
 
     Ok(())
@@ -357,7 +357,7 @@ fn handle_phys_info(path: PathBuf, detailed: bool) -> Result<()> {
 
     if detailed {
         println!("\n=== Detailed Information ===");
-        println!("{:#?}", &phys);
+        println!("{:#?}", phys);
     }
 
     Ok(())

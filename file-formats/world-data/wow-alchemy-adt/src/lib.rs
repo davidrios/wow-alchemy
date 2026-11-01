@@ -3,6 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 mod adt_builder;
+mod alpha_map;
 mod chunk;
 mod converter;
 mod error;
@@ -33,6 +34,10 @@ use crate::mh2o::Mh2oChunk as AdvancedMh2oChunk;
 pub use mh2o::{Mh2oEntry, Mh2oInstance, WaterLevelData, WaterVertex, WaterVertexData};
 
 pub use adt_builder::{AdtBuilder, create_flat_terrain};
+pub use alpha_map::{
+    ALPHA_MAP_BYTES, ALPHA_MAP_SIZE, AlphaMapFormat, MCLY_ALPHA_COMPRESSED, MCLY_USE_ALPHA_MAP,
+    MCNK_DO_NOT_FIX_ALPHA_MAP, decode_alpha_map,
+};
 pub use chunk::*;
 pub use converter::convert_adt;
 pub use error::{AdtError, Result};

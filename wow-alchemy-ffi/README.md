@@ -1,6 +1,6 @@
 # wow-alchemy-ffi
 
-A C ABI for reading World of Warcraft MPQ archives, BLP textures and DBC files from any language. The declarations and ownership rules are in [`include/wow_alchemy.h`](include/wow_alchemy.h).
+A C ABI for reading World of Warcraft MPQ archives, BLP textures, DBC tables and WDT and ADT terrain from any language. The declarations and ownership rules are in [`include/wow_alchemy.h`](include/wow_alchemy.h).
 
 Build the shared library with:
 

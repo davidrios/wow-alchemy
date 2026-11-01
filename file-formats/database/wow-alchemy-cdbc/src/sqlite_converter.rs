@@ -137,10 +137,7 @@ pub fn convert_to_sqlite(
     source_dir: &Path,
     output_sqlite: &Path,
 ) -> Result<()> {
-    let root_dir = match source_dir.read_dir() {
-        Ok(iter) => iter,
-        Err(err) => return Err(err.into()),
-    };
+    let root_dir = source_dir.read_dir()?;
 
     fs::remove_file(output_sqlite).ok();
 

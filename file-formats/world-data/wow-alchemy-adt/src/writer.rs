@@ -497,8 +497,7 @@ impl Adt {
         }
 
         // Update MCIN entries if needed
-        if self.mcin.is_some() && offsets.mcin.is_some() {
-            let mcin_pos = offsets.mcin.unwrap();
+        if let (Some(_), Some(mcin_pos)) = (&self.mcin, offsets.mcin) {
             let current_pos = writer.stream_position()?;
 
             // Go back to MCIN and update entries

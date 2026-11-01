@@ -457,6 +457,8 @@ impl McnkPool {
                 doodad_refs: Vec::new(),
                 map_obj_refs: Vec::new(),
                 alpha_maps: Vec::new(),
+                raw_alpha: Vec::new(),
+                raw_vertex_colors: Vec::new(),
                 mclq: None,
             }
         }

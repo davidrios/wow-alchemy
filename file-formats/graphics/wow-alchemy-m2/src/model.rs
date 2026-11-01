@@ -69,11 +69,7 @@ impl WowStructR for M2Model {
                 let mut chunks = Vec::new();
                 let mut chunk_index = HashMap::new();
 
-                loop {
-                    let Ok(chunk_header) = ChunkHeader::wow_read(reader) else {
-                        break;
-                    };
-
+                while let Ok(chunk_header) = ChunkHeader::wow_read(reader) {
                     let (chunk_magic, chunk_data): (&MagicStr, M2Chunk) = match chunk_header.magic {
                         file_id::AFID => (
                             &chunk_header.magic,

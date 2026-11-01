@@ -54,11 +54,7 @@ impl WowStructR for PhysFile {
         let mut chunks = Vec::new();
         let mut chunk_index = HashMap::new();
 
-        loop {
-            let Ok(chunk_header) = ChunkHeader::wow_read(reader) else {
-                break;
-            };
-
+        while let Ok(chunk_header) = ChunkHeader::wow_read(reader) {
             let (chunk_magic, chunk_data): (&MagicStr, PhysChunk) = match chunk_header.magic {
                 shape::BOXS => (
                     &shape::BOXS,

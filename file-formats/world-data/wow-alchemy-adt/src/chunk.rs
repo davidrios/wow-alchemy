@@ -689,6 +689,11 @@ pub struct McnkChunk {
     pub map_obj_refs: Vec<u32>,
     /// Alpha maps (texture blending)
     pub alpha_maps: Vec<Vec<u8>>,
+    /// The MCAL data as stored. Layers index into it with `alpha_map_offset`, and
+    /// [`crate::decode_alpha_map`] decodes it in any format.
+    pub raw_alpha: Vec<u8>,
+    /// MCCV vertex colors as stored, 145 entries of 4 bytes. Empty if the chunk has none.
+    pub raw_vertex_colors: Vec<u8>,
     /// Legacy liquid data (pre-WotLK)
     pub mclq: Option<crate::mcnk_subchunks::MclqSubchunk>,
 }
@@ -783,6 +788,14 @@ impl McnkChunk {
         let mut doodad_refs = Vec::new();
         let mut map_obj_refs = Vec::new();
         let mut alpha_maps = Vec::new();
+        let mut raw_alpha = Vec::new();
+        let raw_vertex_colors = read_vertex_colors(
+            context,
+            chunk_start,
+            chunk_start + 8 + header.size as u64,
+            mccv_offset,
+            flags,
+        );
 
         // Read MCVT (height map) - with bounds checking
         if mcvt_offset > 0 {
@@ -1031,14 +1044,21 @@ impl McnkChunk {
                         match ChunkHeader::read(context.reader) {
                             Ok(subheader) => {
                                 if subheader.magic == *b"MCAL" {
-                                    // Check if the entire MCAL chunk is within bounds
-                                    if mcal_abs_pos + 8 + subheader.size as u64 <= chunk_end {
+                                    // Some files give MCAL a wrong size of its own, so
+                                    // also trust the MCNK header's size, which includes
+                                    // the subchunk header.
+                                    let alpha_size = subheader
+                                        .size
+                                        .max(mcal_size.saturating_sub(8))
+                                        .min((chunk_end - mcal_abs_pos - 8) as u32);
+                                    if mcal_abs_pos + 8 + alpha_size as u64 <= chunk_end {
                                         // For now, just read the whole chunk and store it
-                                        let mut alpha_data = vec![0u8; subheader.size as usize];
+                                        let mut alpha_data = vec![0u8; alpha_size as usize];
                                         match context.reader.read_exact(&mut alpha_data) {
                                             Ok(_) => {
                                                 // Process alpha maps based on texture layers
                                                 // The first layer doesn't have an alpha map
+                                                raw_alpha.clone_from(&alpha_data);
                                                 for layer in texture_layers.iter().skip(1) {
                                                     // Compute the size of this alpha map
                                                     // For now, assume 64x64 = 4096 bytes
@@ -1168,6 +1188,8 @@ impl McnkChunk {
             doodad_refs,
             map_obj_refs,
             alpha_maps,
+            raw_alpha,
+            raw_vertex_colors,
             mclq,
         })
     }
@@ -1461,4 +1483,34 @@ impl MtfxChunk {
 
         Ok(Self { effects })
     }
+}
+
+/// MCNK flag: the chunk has MCCV vertex colors.
+const MCNK_HAS_MCCV: u32 = 0x40;
+
+const MCCV_BYTES: usize = 145 * 4;
+
+/// Reads a chunk's MCCV data, or nothing if it has none or it's malformed.
+fn read_vertex_colors<R: Read + Seek>(
+    context: &mut ParserContext<R>,
+    chunk_start: u64,
+    chunk_end: u64,
+    offset: u32,
+    flags: u32,
+) -> Vec<u8> {
+    let position = chunk_start + offset as u64;
+    if flags & MCNK_HAS_MCCV == 0 || offset == 0 || position + 8 + MCCV_BYTES as u64 > chunk_end {
+        return Vec::new();
+    }
+
+    let mut data = vec![0; MCCV_BYTES];
+    let read = context
+        .reader
+        .seek(SeekFrom::Start(position))
+        .ok()
+        .and_then(|_| ChunkHeader::read(context.reader).ok())
+        .filter(|header| header.magic == *b"MCCV")
+        .and_then(|_| context.reader.read_exact(&mut data).ok());
+
+    if read.is_some() { data } else { Vec::new() }
 }

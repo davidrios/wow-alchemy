@@ -620,8 +620,8 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
         .into();
     };
 
-    TokenStream::from(if struct_wow_data_attrs.version.is_none() {
-        quote! {
+    TokenStream::from(match struct_wow_data_attrs.version {
+        None => quote! {
             impl #impl_generics wow_alchemy_data::types::WowDataR<#header_ty> for #struct_name #ty_generics #where_clause {
                 fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
                     Ok(Self{
@@ -629,10 +629,8 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
                     })
                 }
             }
-        }
-    } else {
-        let version_ty = struct_wow_data_attrs.version.unwrap();
-        quote! {
+        },
+        Some(version_ty) => quote! {
             impl #impl_generics wow_alchemy_data::types::VWowDataR<#version_ty, #header_ty> for #struct_name #ty_generics #where_clause {
                 fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
                     Ok(Self{
@@ -640,7 +638,7 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
                     })
                 }
             }
-        }
+        },
     })
 }
 
