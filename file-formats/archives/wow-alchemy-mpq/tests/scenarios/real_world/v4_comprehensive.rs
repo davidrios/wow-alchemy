@@ -18,8 +18,8 @@ fn test_v4_comprehensive() {
     fs::write(&file3_path, b"Nested file content").unwrap();
 
     // Create v4 archive with various options
-    let archive_file = NamedTempFile::new().unwrap();
-    let archive_path = archive_file.path();
+    let archive_file = NamedTempFile::new().unwrap().into_temp_path();
+    let archive_path: &std::path::Path = &archive_file;
 
     ArchiveBuilder::new()
         .version(FormatVersion::V4)
@@ -117,8 +117,8 @@ fn test_v4_comprehensive() {
 #[test]
 fn test_v4_empty_archive() {
     // Test creating an empty v4 archive
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     ArchiveBuilder::new()
         .version(FormatVersion::V4)
@@ -152,8 +152,8 @@ fn test_v4_empty_archive() {
 #[test]
 fn test_v4_large_file_support() {
     // Test v4's ability to handle large file offsets
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     // Test v4's ability to handle large file offsets
     let mut builder = ArchiveBuilder::new()

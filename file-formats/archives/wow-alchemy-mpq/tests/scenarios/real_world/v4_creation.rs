@@ -6,8 +6,8 @@ use wow_alchemy_mpq::{Archive, ArchiveBuilder, FormatVersion};
 #[test]
 fn test_v4_archive_creation() {
     // Create a temporary file for the archive
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     // Create a v4 archive
     ArchiveBuilder::new()

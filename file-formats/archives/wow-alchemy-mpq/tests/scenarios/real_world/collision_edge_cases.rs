@@ -3,8 +3,8 @@ use wow_alchemy_mpq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption};
 
 #[test]
 fn test_collision_edge_cases() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     // Create files with various naming patterns likely to cause collisions
     let mut builder = ArchiveBuilder::new()

@@ -8,8 +8,8 @@ use wow_alchemy_mpq::{
 #[test]
 fn test_listfile_updates_correctly() {
     // Create initial archive with some files
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     // Build initial archive with automatic listfile
     ArchiveBuilder::new()
@@ -129,8 +129,8 @@ fn test_listfile_updates_correctly() {
 #[test]
 fn test_multiple_listfile_updates() {
     // Test that multiple updates don't cause block table bloat
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     // Build initial archive
     ArchiveBuilder::new()

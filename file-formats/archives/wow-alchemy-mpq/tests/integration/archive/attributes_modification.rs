@@ -15,8 +15,8 @@ fn test_attributes_updates_on_modification() {
 #[test]
 fn test_attributes_created_if_missing() {
     // Create archive without attributes
-    let temp_file = NamedTempFile::new().unwrap();
-    let path = temp_file.path();
+    let temp_file = NamedTempFile::new().unwrap().into_temp_path();
+    let path: &std::path::Path = &temp_file;
 
     ArchiveBuilder::new()
         .version(FormatVersion::V1)
