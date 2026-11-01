@@ -1,0 +1,26 @@
+[package]
+name = "wow-alchemy-ffi"
+version = "0.2.0"
+authors.workspace = true
+edition.workspace = true
+# wow-mpq 0.7 requires 1.92, newer than the rest of the workspace.
+rust-version = "1.92"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "C ABI for reading World of Warcraft MPQ archives, BLP textures and DBC files"
+readme = "README.md"
+keywords = ["wow", "warcraft", "ffi", "mpq", "gamedev"]
+categories = ["game-development", "external-ffi-bindings"]
+
+[lib]
+name = "wow_alchemy_ffi"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wow-alchemy-blp = { path = "../file-formats/graphics/wow-alchemy-blp", version = "0.2.0" }
+wow-alchemy-cdbc = { path = "../file-formats/database/wow-alchemy-cdbc", version = "0.2.0" }
+wow-mpq = "0.7"
+
+[dev-dependencies]
+tempfile = { workspace = true }

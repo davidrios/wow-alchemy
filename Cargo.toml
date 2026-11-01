@@ -18,6 +18,9 @@ members = [
   # Database
   "file-formats/database/wow-alchemy-cdbc",
 
+  # FFI
+  "wow-alchemy-ffi",
+
   # CLI
   "wow-alchemy",
 ]
