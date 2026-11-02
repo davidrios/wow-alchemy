@@ -160,6 +160,9 @@ pub enum AlphaType {
     None = 0,
     /// 1-bit alpha (binary transparency)
     OneBit = 1,
+    /// Seen on uncompressed BLP2s, such as the sun's glare in 3.3.5a, whose pixels hold
+    /// their own alpha, so it decides nothing.
+    Unspecified = 2,
     /// Enhanced alpha blending (introduced in TBC 2.4.3)
     Enhanced = 7,
     /// 8-bit alpha channel
@@ -171,6 +174,7 @@ impl std::fmt::Display for AlphaType {
         match self {
             AlphaType::None => write!(f, "None (0)"),
             AlphaType::OneBit => write!(f, "1-bit (1)"),
+            AlphaType::Unspecified => write!(f, "Unspecified (2)"),
             AlphaType::Enhanced => write!(f, "Enhanced (7)"),
             AlphaType::EightBit => write!(f, "8-bit (8)"),
         }
@@ -181,7 +185,9 @@ impl AlphaType {
     /// Returns true if this alpha type was available in the specified WoW version
     pub fn is_supported_in_version(self, wow_version: WowVersion) -> bool {
         match self {
-            AlphaType::None | AlphaType::OneBit | AlphaType::EightBit => true,
+            AlphaType::None | AlphaType::OneBit | AlphaType::Unspecified | AlphaType::EightBit => {
+                true
+            }
             AlphaType::Enhanced => wow_version >= WowVersion::TBC,
         }
     }
@@ -189,7 +195,7 @@ impl AlphaType {
     /// Get the effective alpha bits for this alpha type
     pub fn alpha_bits(self) -> u8 {
         match self {
-            AlphaType::None => 0,
+            AlphaType::None | AlphaType::Unspecified => 0,
             AlphaType::OneBit => 1,
             AlphaType::Enhanced => 8, // Enhanced uses 8-bit precision
             AlphaType::EightBit => 8,
@@ -213,6 +219,7 @@ impl TryFrom<u8> for AlphaType {
     fn try_from(val: u8) -> Result<AlphaType, Self::Error> {
         match val {
             0 => Ok(AlphaType::None),
+            2 => Ok(AlphaType::Unspecified),
             1 => Ok(AlphaType::OneBit),
             7 => Ok(AlphaType::Enhanced),
             8 => Ok(AlphaType::EightBit),
