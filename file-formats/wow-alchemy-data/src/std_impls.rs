@@ -337,3 +337,36 @@ where
         header.wow_read_to_vec(reader)
     }
 }
+
+/// Fixed-size arrays of plain values, as many WoW records hold.
+macro_rules! impl_array {
+    ($item:ty, $count:literal) => {
+        impl WowHeaderR for [$item; $count] {
+            fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+                let mut items = [<$item>::default(); $count];
+                for item in &mut items {
+                    *item = <$item as WowHeaderR>::wow_read(reader)?;
+                }
+                Ok(items)
+            }
+        }
+
+        impl WowHeaderW for [$item; $count] {
+            fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
+                for item in self {
+                    item.wow_write(writer)?;
+                }
+                Ok(())
+            }
+
+            fn wow_size(&self) -> usize {
+                $count * std::mem::size_of::<$item>()
+            }
+        }
+    };
+}
+
+impl_array!(u32, 4);
+impl_array!(u8, 20);
+impl_array!(f32, 4);
+impl_array!(i16, 6);

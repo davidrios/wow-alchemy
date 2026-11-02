@@ -51,9 +51,50 @@ struct StoredChunk {
     vertex_colors: Vec<u8>,
 }
 
+/// A model placed on a tile. Positions run east, up and south from the map's
+/// north-west corner, and rotations are degrees.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WaPlacement {
+    /// For wa_adt_model_name or wa_adt_wmo_name.
+    pub name: u32,
+    /// Shared by every tile that lists this placement.
+    pub unique_id: u32,
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
+    /// Always 1 for WMOs.
+    pub scale: f32,
+    /// The doodad set to show. Always 0 for M2s.
+    pub doodad_set: u32,
+    /// The world bounds, from the file. All zero for M2s, which don't store them.
+    pub bounds_min: [f32; 3],
+    pub bounds_max: [f32; 3],
+}
+
 pub struct WaAdt {
     textures: Vec<String>,
     chunks: Vec<StoredChunk>,
+    models: Vec<String>,
+    wmos: Vec<String>,
+    doodads: Vec<WaPlacement>,
+    wmo_placements: Vec<WaPlacement>,
+}
+
+/// Placements name a slot in MMID or MWID, which holds a string's offset. The
+/// parser lists the strings in order, so this finds the slot's string by counting
+/// the offsets, which works unless a file's offsets skip strings.
+fn name_for_slot(names: &[String], offsets: &[u32], slot: u32) -> u32 {
+    let Some(&wanted) = offsets.get(slot as usize) else {
+        return slot;
+    };
+    let mut offset = 0u32;
+    for (index, name) in names.iter().enumerate() {
+        if offset == wanted {
+            return index as u32;
+        }
+        offset += name.len() as u32 + 1;
+    }
+    slot
 }
 
 fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String> {
@@ -159,8 +200,53 @@ pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32
         }
         chunks.sort_by_key(|chunk| (chunk.iy, chunk.ix));
 
+        let models = adt.mmdx.map(|c| c.filenames).unwrap_or_default();
+        let wmos = adt.mwmo.map(|c| c.filenames).unwrap_or_default();
+        let model_slots = adt.mmid.map(|c| c.offsets).unwrap_or_default();
+        let wmo_slots = adt.mwid.map(|c| c.offsets).unwrap_or_default();
+
+        let doodads = adt
+            .mddf
+            .map(|c| c.doodads)
+            .unwrap_or_default()
+            .iter()
+            .map(|d| WaPlacement {
+                name: name_for_slot(&models, &model_slots, d.name_id),
+                unique_id: d.unique_id,
+                position: d.position,
+                rotation: d.rotation,
+                scale: d.scale,
+                doodad_set: 0,
+                bounds_min: [0.0; 3],
+                bounds_max: [0.0; 3],
+            })
+            .collect();
+        let wmo_placements = adt
+            .modf
+            .map(|c| c.models)
+            .unwrap_or_default()
+            .iter()
+            .map(|m| WaPlacement {
+                name: name_for_slot(&wmos, &wmo_slots, m.name_id),
+                unique_id: m.unique_id,
+                position: m.position,
+                rotation: m.rotation,
+                scale: 1.0,
+                doodad_set: m.doodad_set as u32,
+                bounds_min: m.bounds_min,
+                bounds_max: m.bounds_max,
+            })
+            .collect();
+
         let textures = adt.mtex.map(|mtex| mtex.filenames).unwrap_or_default();
-        Ok(Box::into_raw(Box::new(WaAdt { textures, chunks })))
+        Ok(Box::into_raw(Box::new(WaAdt {
+            textures,
+            chunks,
+            models,
+            wmos,
+            doodads,
+            wmo_placements,
+        })))
     })
 }
 
@@ -220,6 +306,67 @@ pub unsafe extern "C" fn wa_adt_chunk(
                     vertex_colors: chunk.vertex_colors.as_ptr(),
                 })
             };
+            WaStatus::Ok
+        }
+        None => WaStatus::NotFound,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_model_name(
+    adt: *const WaAdt,
+    index: u32,
+    out: *mut *const u8,
+    out_len: *mut usize,
+) -> WaStatus {
+    unsafe { write_name((&*adt).models.get(index as usize), out, out_len) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_wmo_name(
+    adt: *const WaAdt,
+    index: u32,
+    out: *mut *const u8,
+    out_len: *mut usize,
+) -> WaStatus {
+    unsafe { write_name((&*adt).wmos.get(index as usize), out, out_len) }
+}
+
+/// The tile's M2 placements, owned by adt.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_doodads(
+    adt: *const WaAdt,
+    out: *mut *const WaPlacement,
+    out_len: *mut usize,
+) {
+    let doodads = &unsafe { &*adt }.doodads;
+    unsafe {
+        out.write(doodads.as_ptr());
+        out_len.write(doodads.len());
+    }
+}
+
+/// The tile's WMO placements, owned by adt.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_wmos(
+    adt: *const WaAdt,
+    out: *mut *const WaPlacement,
+    out_len: *mut usize,
+) {
+    let wmos = &unsafe { &*adt }.wmo_placements;
+    unsafe {
+        out.write(wmos.as_ptr());
+        out_len.write(wmos.len());
+    }
+}
+
+unsafe fn write_name(name: Option<&String>, out: *mut *const u8, out_len: *mut usize) -> WaStatus {
+    match name {
+        Some(name) => {
+            unsafe {
+                out.write(name.as_ptr());
+                out_len.write(name.len());
+            }
             WaStatus::Ok
         }
         None => WaStatus::NotFound,

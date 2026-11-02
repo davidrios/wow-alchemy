@@ -3,6 +3,7 @@ pub mod converter;
 pub mod error;
 pub mod group_parser;
 pub mod parser;
+pub mod render;
 pub mod types;
 pub mod validator;
 pub mod version;

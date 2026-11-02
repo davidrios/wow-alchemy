@@ -16,6 +16,7 @@ use wow_alchemy_blp::parser::load_blp_from_buf;
 use wow_alchemy_cdbc::WdbFile;
 use wow_alchemy_mpq::PatchChain;
 
+pub mod models;
 pub mod terrain;
 
 #[repr(i32)]

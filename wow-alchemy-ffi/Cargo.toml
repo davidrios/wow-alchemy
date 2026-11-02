@@ -8,7 +8,7 @@ rust-version = "1.92"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "C ABI for reading World of Warcraft MPQ archives, BLP textures, DBC tables and terrain"
+description = "C ABI for reading World of Warcraft MPQ archives, BLP textures, DBC tables, terrain and models"
 readme = "README.md"
 keywords = ["wow", "warcraft", "ffi", "mpq", "gamedev"]
 categories = ["game-development", "external-ffi-bindings"]
@@ -21,6 +21,9 @@ crate-type = ["cdylib", "rlib"]
 wow-alchemy-adt = { path = "../file-formats/world-data/wow-alchemy-adt", version = "0.2.0" }
 wow-alchemy-blp = { path = "../file-formats/graphics/wow-alchemy-blp", version = "0.2.0" }
 wow-alchemy-cdbc = { path = "../file-formats/database/wow-alchemy-cdbc", version = "0.2.0" }
+wow-alchemy-data = { path = "../file-formats/wow-alchemy-data", version = "0.2.0" }
+wow-alchemy-m2 = { path = "../file-formats/graphics/wow-alchemy-m2", version = "0.2.0" }
+wow-alchemy-wmo = { path = "../file-formats/graphics/wow-alchemy-wmo", version = "0.2.0" }
 wow-alchemy-wdt = { path = "../file-formats/world-data/wow-alchemy-wdt", version = "0.2.0" }
 wow-alchemy-mpq = { path = "../file-formats/archives/wow-alchemy-mpq", version = "0.2.0" }
 

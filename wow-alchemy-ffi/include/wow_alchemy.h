@@ -111,6 +111,137 @@ WaStatus wa_adt_texture_name(const WaAdt *adt, uint32_t index, const uint8_t **o
 /* Chunks 0 to 255, ordered by iy then ix. */
 WaStatus wa_adt_chunk(const WaAdt *adt, uint32_t index, WaTerrainChunk *out);
 
+/* ---- Placements on a tile ---- */
+
+typedef struct WaPlacement {
+    /* For wa_adt_model_name or wa_adt_wmo_name. */
+    uint32_t name;
+    /* Shared by every tile that lists this placement. */
+    uint32_t unique_id;
+    /* East, up and south from the map's north-west corner. */
+    float position[3];
+    /* Degrees. */
+    float rotation[3];
+    float scale;
+    uint32_t doodad_set;
+    /* World bounds from the file. All zero for M2s. */
+    float bounds_min[3];
+    float bounds_max[3];
+} WaPlacement;
+
+WaStatus wa_adt_model_name(const WaAdt *adt, uint32_t index, const uint8_t **out, size_t *out_len);
+WaStatus wa_adt_wmo_name(const WaAdt *adt, uint32_t index, const uint8_t **out, size_t *out_len);
+void wa_adt_doodads(const WaAdt *adt, const WaPlacement **out, size_t *out_len);
+void wa_adt_wmos(const WaAdt *adt, const WaPlacement **out, size_t *out_len);
+
+/* ---- Models ---- */
+
+#define WA_NO_TEXTURE 0xFFFFFFFFu
+#define WA_GPU_RGBA8 0
+#define WA_GPU_DXT1 1
+#define WA_GPU_DXT3 3
+#define WA_GPU_DXT5 5
+
+typedef struct WaBatch {
+    uint32_t index_start;
+    uint32_t index_count;
+    uint32_t material;
+} WaBatch;
+
+/* Pointers are owned by the handle the mesh came from. Positions and normals
+   are in the file's axes, Z up. */
+typedef struct WaMesh {
+    uint32_t vertex_count;
+    const float *positions;
+    const float *normals;
+    const float *tex_coords;
+    /* Red, green, blue, alpha. NULL when there are none. */
+    const uint8_t *colors;
+    uint32_t index_count;
+    const uint32_t *indices;
+    uint32_t batch_count;
+    const WaBatch *batches;
+    /* Triangles to collide with. Empty for M2s, which have wa_m2_collision. */
+    uint32_t collision_index_count;
+    const uint32_t *collision_indices;
+} WaMesh;
+
+typedef struct WaM2Material {
+    /* For wa_m2_texture_name, or WA_NO_TEXTURE. */
+    uint32_t texture;
+    uint32_t blend_mode;
+    uint32_t flags;
+    uint32_t texture_flags;
+} WaM2Material;
+
+typedef struct WaM2 WaM2;
+
+/* An M2 and its .skin file. Returns NULL on failure. */
+WaM2 *wa_m2_open(const uint8_t *m2, size_t m2_len, const uint8_t *skin, size_t skin_len);
+void wa_m2_free(WaM2 *model);
+void wa_m2_mesh(const WaM2 *model, WaMesh *out);
+float wa_m2_bounding_radius(const WaM2 *model);
+/* The model's collision mesh, which has its own vertices: 3 floats each, Z up.
+   Owned by model, and empty for models that have none. */
+void wa_m2_collision(const WaM2 *model, const float **positions, uint32_t *position_count, const uint32_t **indices, uint32_t *index_count);
+/* One material per batch. */
+WaStatus wa_m2_material(const WaM2 *model, uint32_t index, WaM2Material *out);
+WaStatus wa_m2_texture_name(const WaM2 *model, uint32_t index, const uint8_t **out, size_t *out_len);
+
+typedef struct WaWmoMaterial {
+    uint32_t flags;
+    uint32_t blend_mode;
+} WaWmoMaterial;
+
+typedef struct WaWmoDoodadSet {
+    uint32_t start;
+    uint32_t count;
+} WaWmoDoodadSet;
+
+typedef struct WaWmoDoodad {
+    uint32_t name;
+    float position[3];
+    /* X, Y, Z, W. */
+    float rotation[4];
+    float scale;
+} WaWmoDoodad;
+
+typedef struct WaWmo WaWmo;
+typedef struct WaWmoGroup WaWmoGroup;
+
+/* A WMO root file. Returns NULL on failure. */
+WaWmo *wa_wmo_open(const uint8_t *data, size_t len);
+void wa_wmo_free(WaWmo *wmo);
+uint32_t wa_wmo_group_count(const WaWmo *wmo);
+/* Writes 6 floats: the minimum corner, then the maximum, in the WMO's own space. */
+void wa_wmo_bounds(const WaWmo *wmo, float *out);
+uint32_t wa_wmo_material_count(const WaWmo *wmo);
+WaStatus wa_wmo_material(const WaWmo *wmo, uint32_t index, WaWmoMaterial *out, const uint8_t **texture, size_t *texture_len);
+uint32_t wa_wmo_doodad_set_count(const WaWmo *wmo);
+WaStatus wa_wmo_doodad_set(const WaWmo *wmo, uint32_t index, WaWmoDoodadSet *out);
+uint32_t wa_wmo_doodad_count(const WaWmo *wmo);
+WaStatus wa_wmo_doodad(const WaWmo *wmo, uint32_t index, WaWmoDoodad *out);
+WaStatus wa_wmo_doodad_name(const WaWmo *wmo, uint32_t index, const uint8_t **out, size_t *out_len);
+
+/* A WMO group file, named <root>_NNN.wmo. Returns NULL on failure. */
+WaWmoGroup *wa_wmo_group_open(const uint8_t *data, size_t len);
+void wa_wmo_group_free(WaWmoGroup *group);
+void wa_wmo_group_mesh(const WaWmoGroup *group, WaMesh *out);
+uint32_t wa_wmo_group_flags(const WaWmoGroup *group);
+
+typedef struct WaGpuTexture {
+    WaBuffer pixels;
+    /* WA_GPU_RGBA8 holds one level; the others hold a chain down to 1 pixel. */
+    uint32_t format;
+    uint32_t width;
+    uint32_t height;
+    uint32_t mip_count;
+} WaGpuTexture;
+
+/* The file's own compressed mipmaps when the GPU can use them, or else the first
+   level as RGBA8. Free pixels with wa_buffer_free. */
+WaStatus wa_blp_to_gpu(const uint8_t *data, size_t len, WaGpuTexture *out);
+
 #endif
 
 #endif

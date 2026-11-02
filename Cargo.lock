@@ -4037,8 +4037,11 @@ dependencies = [
  "wow-alchemy-adt",
  "wow-alchemy-blp",
  "wow-alchemy-cdbc",
+ "wow-alchemy-data",
+ "wow-alchemy-m2",
  "wow-alchemy-mpq",
  "wow-alchemy-wdt",
+ "wow-alchemy-wmo",
 ]
 
 [[package]]
@@ -4131,6 +4134,8 @@ dependencies = [
  "test-case",
  "thiserror 2.0.16",
  "tracing",
+ "wow-alchemy-data",
+ "wow-alchemy-data-derive",
 ]
 
 [[package]]

@@ -262,8 +262,8 @@ impl<T: WowHeaderR + WowHeaderW> M2AnimationBlock<T> {
 
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
 pub struct M2FakeAnimationBlockHeader<T: WowHeaderR + WowHeaderW> {
+    /// Fixed-point times, 0 to 32767 over a particle's life.
     pub timestamps: WowArray<u16>,
-    pub keys: WowArray<u16>,
     pub values: WowArray<T>,
 }
 
@@ -271,7 +271,6 @@ pub struct M2FakeAnimationBlockHeader<T: WowHeaderR + WowHeaderW> {
 #[wow_data(header = M2FakeAnimationBlockHeader<T>)]
 pub struct M2FakeAnimationBlockData<T: WowHeaderR + WowHeaderW> {
     pub timestamps: Vec<u16>,
-    pub keys: Vec<u16>,
     pub values: Vec<T>,
 }
 
