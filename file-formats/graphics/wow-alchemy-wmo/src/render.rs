@@ -95,6 +95,26 @@ pub struct WmoDoodadRecord {
     pub color: u32,
 }
 
+/// One entry of MOPT.
+#[derive(Debug, Clone, Copy, Default, WowHeaderR, WowHeaderW)]
+pub struct WmoPortalRecord {
+    pub start: u16,
+    pub count: u16,
+    pub normal: C3Vector,
+    pub offset: f32,
+}
+
+/// One entry of MOPR.
+#[derive(Debug, Clone, Copy, Default, WowHeaderR, WowHeaderW)]
+pub struct WmoPortalRefRecord {
+    pub portal: u16,
+    /// The group on the far side, from the group this entry belongs to.
+    pub group: u16,
+    /// The side of the portal's plane it's seen from: 1, -1, or 0 for both.
+    pub side: i16,
+    pub padding: u16,
+}
+
 /// One entry of MOBA.
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
 pub struct WmoBatchRecord {
@@ -138,6 +158,8 @@ pub struct RenderDoodad {
     /// X, Y, Z, W.
     pub rotation: [f32; 4],
     pub scale: f32,
+    /// Its baked light, as stored: 0xAARRGGBB.
+    pub color: u32,
 }
 
 /// A WMO root file.
@@ -145,6 +167,8 @@ pub struct RenderDoodad {
 pub struct RenderRoot {
     /// MOHD flags.
     pub flags: u32,
+    /// MOHD's ambient color, as stored: 0xAARRGGBB.
+    pub ambient_color: u32,
     pub group_count: u32,
     pub bounds_min: [f32; 3],
     pub bounds_max: [f32; 3],
@@ -152,6 +176,12 @@ pub struct RenderRoot {
     pub doodad_sets: Vec<RenderDoodadSet>,
     pub doodad_names: Vec<String>,
     pub doodads: Vec<RenderDoodad>,
+    /// MOPV: the corners of every portal.
+    pub portal_vertices: Vec<[f32; 3]>,
+    /// MOPT.
+    pub portals: Vec<WmoPortalRecord>,
+    /// MOPR.
+    pub portal_refs: Vec<WmoPortalRefRecord>,
 }
 
 /// A range of [`RenderGroup::indices`] with one material, from MOBA.
@@ -175,6 +205,13 @@ pub struct RenderGroup {
     pub batches: Vec<RenderBatch>,
     /// Triangles to collide with, as indexes into `positions`.
     pub collision_indices: Vec<u16>,
+    /// The doodads standing in this group, as indexes into [`RenderRoot::doodads`], from MODR.
+    pub doodad_refs: Vec<u16>,
+    /// The group's box, from MOGP's header: smallest corner, then largest.
+    pub bounds: [f32; 6],
+    /// The group's range of [`RenderRoot::portal_refs`], from MOGP's header.
+    pub portal_start: u32,
+    pub portal_count: u32,
     /// The liquid field of the group's header. See [`RenderLiquid::liquid_type`].
     pub group_liquid: u32,
     pub liquid: Option<RenderLiquid>,
@@ -329,8 +366,15 @@ fn string_at(block: &[u8], offset: usize) -> String {
 impl RenderRoot {
     pub fn parse(data: &[u8]) -> Result<Self> {
         let mut header = None;
-        let (mut textures, mut materials, mut names, mut sets, mut defs): (&[u8], &[u8], &[u8], &[u8], &[u8]) =
-            (&[], &[], &[], &[], &[]);
+        let (mut portal_vertices, mut portals, mut portal_refs) =
+            (Vec::new(), Vec::new(), Vec::new());
+        let (mut textures, mut materials, mut names, mut sets, mut defs): (
+            &[u8],
+            &[u8],
+            &[u8],
+            &[u8],
+            &[u8],
+        ) = (&[], &[], &[], &[], &[]);
 
         // Borrowing the chunks first means their order in the file doesn't matter.
         for (magic, body) in chunks(data)? {
@@ -341,6 +385,14 @@ impl RenderRoot {
                 b"MODN" => names = body,
                 b"MODS" => sets = body,
                 b"MODD" => defs = body,
+                b"MOPV" => {
+                    portal_vertices = records::<C3Vector>("MOPV", body)?
+                        .iter()
+                        .map(vec3)
+                        .collect()
+                }
+                b"MOPT" => portals = records("MOPT", body)?,
+                b"MOPR" => portal_refs = records("MOPR", body)?,
                 _ => {}
             }
         }
@@ -348,6 +400,10 @@ impl RenderRoot {
         let header = header.ok_or_else(|| WmoError::MissingRequiredChunk("MOHD".into()))?;
         let mut root = Self {
             flags: header.flags as u32,
+            ambient_color: header.ambient_color,
+            portal_vertices,
+            portals,
+            portal_refs,
             group_count: header.group_count,
             bounds_min: vec3(&header.bounds_min),
             bounds_max: vec3(&header.bounds_max),
@@ -383,6 +439,7 @@ impl RenderRoot {
                 position: vec3(&d.position),
                 rotation: d.rotation,
                 scale: d.scale,
+                color: d.color,
             });
         }
 
@@ -399,8 +456,16 @@ impl RenderGroup {
                 }
                 let flags = u32::from_le_bytes(body[8..12].try_into().unwrap());
                 let mut group = Self::parse_body(flags, &body[GROUP_HEADER_BYTES..])?;
+                for (i, bound) in group.bounds.iter_mut().enumerate() {
+                    let at = 12 + i * 4;
+                    *bound = f32::from_le_bytes(body[at..at + 4].try_into().unwrap());
+                }
+                group.portal_start = u16::from_le_bytes(body[36..38].try_into().unwrap()) as u32;
+                group.portal_count = u16::from_le_bytes(body[38..40].try_into().unwrap()) as u32;
                 group.group_liquid = u32::from_le_bytes(
-                    body[GROUP_LIQUID_OFFSET..GROUP_LIQUID_OFFSET + 4].try_into().unwrap(),
+                    body[GROUP_LIQUID_OFFSET..GROUP_LIQUID_OFFSET + 4]
+                        .try_into()
+                        .unwrap(),
                 );
                 return Ok(group);
             }
@@ -420,8 +485,19 @@ impl RenderGroup {
             match &magic {
                 b"MOPY" => triangles = records::<WmoTriangleRecord>("MOPY", body)?,
                 b"MOVI" => group.indices = records("MOVI", body)?,
-                b"MOVT" => group.positions = records::<C3Vector>("MOVT", body)?.iter().map(vec3).collect(),
-                b"MONR" => group.normals = records::<C3Vector>("MONR", body)?.iter().map(vec3).collect(),
+                b"MODR" => group.doodad_refs = records("MODR", body)?,
+                b"MOVT" => {
+                    group.positions = records::<C3Vector>("MOVT", body)?
+                        .iter()
+                        .map(vec3)
+                        .collect()
+                }
+                b"MONR" => {
+                    group.normals = records::<C3Vector>("MONR", body)?
+                        .iter()
+                        .map(vec3)
+                        .collect()
+                }
                 // Some groups have a second set, for a second texture.
                 b"MOTV" if !read_uv => {
                     read_uv = true;
@@ -432,7 +508,10 @@ impl RenderGroup {
                 }
                 b"MOCV" if !read_colors => {
                     read_colors = true;
-                    group.colors = body.chunks_exact(4).map(|c| [c[2], c[1], c[0], c[3]]).collect();
+                    group.colors = body
+                        .chunks_exact(4)
+                        .map(|c| [c[2], c[1], c[0], c[3]])
+                        .collect();
                 }
                 b"MLIQ" => group.liquid = Some(RenderLiquid::parse(body)?),
                 b"MOBA" => {
@@ -564,7 +643,10 @@ mod tests {
         batch[16..18].copy_from_slice(&3u16.to_le_bytes());
         batch[23] = 7;
 
-        let mut sub = chunk(b"MOPY", &[TRIANGLE_RENDER, 7, TRIANGLE_RENDER | TRIANGLE_DETAIL, 7]);
+        let mut sub = chunk(
+            b"MOPY",
+            &[TRIANGLE_RENDER, 7, TRIANGLE_RENDER | TRIANGLE_DETAIL, 7],
+        );
         sub.extend(chunk(b"MOVI", &[0, 0, 1, 0, 2, 0, 2, 0, 1, 0, 0, 0]));
         sub.extend(chunk(b"MOVT", &floats(&[0.0; 9])));
         sub.extend(chunk(b"MONR", &floats(&[0.0; 9])));

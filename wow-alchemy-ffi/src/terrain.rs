@@ -31,6 +31,8 @@ pub struct WaTerrainChunk {
     pub layer_count: u32,
     pub texture_ids: [u32; MAX_LAYERS],
     pub layer_flags: [u32; MAX_LAYERS],
+    /// Each layer's GroundEffectTexture row.
+    pub effect_ids: [u32; MAX_LAYERS],
     pub alpha: *const u8,
     /// 145 colors of 4 bytes as stored in the file: blue, green, red, alpha, with 127 neutral.
     pub vertex_colors: *const u8,
@@ -48,6 +50,7 @@ struct StoredChunk {
     layer_count: u32,
     texture_ids: [u32; MAX_LAYERS],
     layer_flags: [u32; MAX_LAYERS],
+    effect_ids: [u32; MAX_LAYERS],
     alpha: Vec<u8>,
     vertex_colors: Vec<u8>,
 }
@@ -127,12 +130,14 @@ fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String
 
     let mut texture_ids = [0; MAX_LAYERS];
     let mut layer_flags = [0; MAX_LAYERS];
+    let mut effect_ids = [0; MAX_LAYERS];
     let mut alpha = vec![0; (MAX_LAYERS - 1) * ALPHA_MAP_BYTES];
     let layers = &chunk.texture_layers[..chunk.texture_layers.len().min(MAX_LAYERS)];
 
     for (index, layer) in layers.iter().enumerate() {
         texture_ids[index] = layer.texture_id;
         layer_flags[index] = layer.flags;
+        effect_ids[index] = layer.effect_id;
         if index == 0 || layer.flags & MCLY_USE_ALPHA_MAP == 0 {
             continue;
         }
@@ -169,6 +174,7 @@ fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String
         layer_count: layers.len() as u32,
         texture_ids,
         layer_flags,
+        effect_ids,
         alpha,
         vertex_colors,
     })
@@ -350,6 +356,7 @@ pub unsafe extern "C" fn wa_adt_chunk(
                     layer_count: chunk.layer_count,
                     texture_ids: chunk.texture_ids,
                     layer_flags: chunk.layer_flags,
+                    effect_ids: chunk.effect_ids,
                     alpha: chunk.alpha.as_ptr(),
                     vertex_colors: chunk.vertex_colors.as_ptr(),
                 })

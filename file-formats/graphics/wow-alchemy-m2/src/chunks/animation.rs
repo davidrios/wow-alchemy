@@ -154,6 +154,43 @@ impl<T: WowHeaderR + WowHeaderW> M2AnimationTrackHeader<T> {
     }
 }
 
+impl<T: WowHeaderR + WowHeaderW> M2AnimationTrackHeader<T> {
+    /// Reads one sequence's keys of a WotLK-style track. The list of per-sequence arrays is in
+    /// the M2, but the keys can be in another reader: a sequence not stored in the model keeps
+    /// them in its .anim file. Curved tracks store 3 values per key (value, in, out), and this
+    /// keeps the values only. Tracks without per-sequence arrays give nothing.
+    pub fn read_sequence_keys<R: Read + Seek, D: Read + Seek>(
+        &self,
+        sequence: usize,
+        model: &mut R,
+        keys: &mut D,
+    ) -> WDResult<(Vec<u32>, Vec<T>)> {
+        let (TrackArray::Multiple(timestamps), TrackArray::Multiple(values)) =
+            (&self.timestamps, &self.values)
+        else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+
+        if sequence >= timestamps.count as usize || sequence >= values.count as usize {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        let timestamps = timestamps.wow_read_to_vec(model)?[sequence].wow_read_to_vec(keys)?;
+        let values = &values.wow_read_to_vec(model)?[sequence];
+        let stride = match self.interpolation_type {
+            M2InterpolationType::Bezier | M2InterpolationType::Hermite => 3,
+            _ => 1,
+        };
+        let values = WowArray::<T>::new(values.count * stride, values.offset)
+            .wow_read_to_vec(keys)?
+            .into_iter()
+            .step_by(stride as usize)
+            .collect();
+
+        Ok((timestamps, values))
+    }
+}
+
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
 pub struct M2SplineKey<T: WowHeaderR + WowHeaderW> {
     pub value: T,
