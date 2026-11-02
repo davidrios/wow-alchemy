@@ -4,7 +4,8 @@ use std::io::Cursor;
 use std::ptr;
 
 use wow_alchemy_adt::{
-    ALPHA_MAP_BYTES, Adt, AlphaMapFormat, MCLY_USE_ALPHA_MAP, McnkChunk, decode_alpha_map,
+    ALPHA_MAP_BYTES, Adt, AlphaMapFormat, LiquidLayer, MCLY_USE_ALPHA_MAP, McnkChunk,
+    decode_alpha_map, read_liquid_layers,
 };
 use wow_alchemy_wdt::WdtReader;
 use wow_alchemy_wdt::version::WowVersion;
@@ -71,7 +72,23 @@ pub struct WaPlacement {
     pub bounds_max: [f32; 3],
 }
 
+/// One layer of liquid in one chunk, on the chunk's 9x9 grid.
+#[repr(C)]
+pub struct WaLiquidLayer {
+    /// The chunk's Y index * 16 + X index.
+    pub chunk: u32,
+    /// Row in LiquidType.dbc.
+    pub liquid_type: u32,
+    /// Bit row * 8 + column is set when that cell has liquid.
+    pub cells: u64,
+    /// 81 world heights, row by row.
+    pub heights: *const f32,
+    /// 81 depths from 0 to 255, row by row.
+    pub depths: *const u8,
+}
+
 pub struct WaAdt {
+    liquids: Vec<LiquidLayer>,
     textures: Vec<String>,
     chunks: Vec<StoredChunk>,
     models: Vec<String>,
@@ -186,6 +203,7 @@ pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
         let adt = Adt::from_reader(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+        let liquids = read_liquid_layers(bytes).map_err(|e| e.to_string())?;
 
         let mut chunks = adt
             .mcnk_chunks
@@ -240,6 +258,7 @@ pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32
 
         let textures = adt.mtex.map(|mtex| mtex.filenames).unwrap_or_default();
         Ok(Box::into_raw(Box::new(WaAdt {
+            liquids,
             textures,
             chunks,
             models,
@@ -254,6 +273,35 @@ pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32
 pub unsafe extern "C" fn wa_adt_free(adt: *mut WaAdt) {
     if !adt.is_null() {
         drop(unsafe { Box::from_raw(adt) });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_liquid_count(adt: *const WaAdt) -> u32 {
+    unsafe { &*adt }.liquids.len() as u32
+}
+
+/// The pointers stay valid until the tile is freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_adt_liquid(
+    adt: *const WaAdt,
+    index: u32,
+    out: *mut WaLiquidLayer,
+) -> WaStatus {
+    match unsafe { &*adt }.liquids.get(index as usize) {
+        Some(layer) => {
+            unsafe {
+                out.write(WaLiquidLayer {
+                    chunk: layer.chunk as u32,
+                    liquid_type: layer.liquid_type as u32,
+                    cells: layer.cells,
+                    heights: layer.heights.as_ptr(),
+                    depths: layer.depths.as_ptr(),
+                })
+            };
+            WaStatus::Ok
+        }
+        None => WaStatus::NotFound,
     }
 }
 

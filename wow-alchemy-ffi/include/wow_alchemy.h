@@ -134,6 +134,18 @@ WaStatus wa_adt_wmo_name(const WaAdt *adt, uint32_t index, const uint8_t **out, 
 void wa_adt_doodads(const WaAdt *adt, const WaPlacement **out, size_t *out_len);
 void wa_adt_wmos(const WaAdt *adt, const WaPlacement **out, size_t *out_len);
 
+/* One layer of liquid in one chunk, on the chunk's 9x9 grid. */
+typedef struct WaLiquidLayer {
+    uint32_t chunk;       /* Y index * 16 + X index */
+    uint32_t liquid_type; /* row in LiquidType.dbc */
+    uint64_t cells;       /* bit row * 8 + column is set when that cell has liquid */
+    const float *heights; /* 81 world heights, row by row */
+    const uint8_t *depths; /* 81 depths from 0 to 255, row by row */
+} WaLiquidLayer;
+
+uint32_t wa_adt_liquid_count(const WaAdt *adt);
+WaStatus wa_adt_liquid(const WaAdt *adt, uint32_t index, WaLiquidLayer *out);
+
 /* ---- Models ---- */
 
 #define WA_NO_TEXTURE 0xFFFFFFFFu
@@ -228,6 +240,20 @@ WaWmoGroup *wa_wmo_group_open(const uint8_t *data, size_t len);
 void wa_wmo_group_free(WaWmoGroup *group);
 void wa_wmo_group_mesh(const WaWmoGroup *group, WaMesh *out);
 uint32_t wa_wmo_group_flags(const WaWmoGroup *group);
+uint32_t wa_wmo_flags(const WaWmo *wmo);
+
+/* A group's liquid surface, on a grid in the WMO's own space. */
+typedef struct WaWmoLiquid {
+    uint32_t vertices_x;
+    uint32_t vertices_y;
+    float corner[3];        /* X, Y, Z */
+    const float *heights;   /* vertices_x * vertices_y heights, row by row */
+    const uint8_t *cells;   /* one byte per cell, row by row: nonzero when it has liquid */
+    uint32_t liquid_type;   /* row in LiquidType.dbc */
+} WaWmoLiquid;
+
+/* root_flags comes from wa_wmo_flags. WA_NOT_FOUND when the group has no liquid. */
+WaStatus wa_wmo_group_liquid(const WaWmoGroup *group, uint32_t root_flags, WaWmoLiquid *out);
 
 typedef struct WaGpuTexture {
     WaBuffer pixels;

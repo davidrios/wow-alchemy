@@ -23,6 +23,18 @@ const TRIANGLE_RENDER: u8 = 0x20;
 /// MOGP flag: the group is lit by its vertex colors rather than the sun.
 pub const GROUP_INDOOR: u32 = 0x2000;
 
+/// MOHD flag: a group's liquid field is a row of LiquidType.dbc.
+const ROOT_LIQUID_IS_ROW: u32 = 0x4;
+/// MOGP flag: the group's plain water is the ocean kind.
+const GROUP_OCEAN_WATER: u32 = 0x80000;
+
+const MLIQ_HEADER_BYTES: usize = 30;
+const MLIQ_VERTEX_BYTES: usize = 8;
+/// An MLIQ cell's low bits say this when the cell has no liquid.
+const MLIQ_NO_LIQUID: u8 = 0x0F;
+/// Where MOGP's header stores the group's liquid.
+const GROUP_LIQUID_OFFSET: usize = 52;
+
 /// The MOHD chunk.
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
 pub struct WmoHeaderRecord {
@@ -131,6 +143,8 @@ pub struct RenderDoodad {
 /// A WMO root file.
 #[derive(Debug, Clone, Default)]
 pub struct RenderRoot {
+    /// MOHD flags.
+    pub flags: u32,
     pub group_count: u32,
     pub bounds_min: [f32; 3],
     pub bounds_max: [f32; 3],
@@ -161,6 +175,114 @@ pub struct RenderGroup {
     pub batches: Vec<RenderBatch>,
     /// Triangles to collide with, as indexes into `positions`.
     pub collision_indices: Vec<u16>,
+    /// The liquid field of the group's header. See [`RenderLiquid::liquid_type`].
+    pub group_liquid: u32,
+    pub liquid: Option<RenderLiquid>,
+}
+
+/// A group's liquid surface from MLIQ, on a grid in the WMO's own space.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RenderLiquid {
+    pub vertices_x: u32,
+    pub vertices_y: u32,
+    pub corner: [f32; 3],
+    /// `vertices_x * vertices_y` heights, row by row.
+    pub heights: Vec<f32>,
+    /// One byte per cell, row by row: 1 when the cell has liquid.
+    pub cells: Vec<u8>,
+    /// The kind the first liquid cell states: 0 water, 1 ocean, 2 magma, 3 slime.
+    first_cell_kind: Option<u8>,
+}
+
+impl RenderLiquid {
+    fn parse(data: &[u8]) -> Result<Self> {
+        let too_short = || WmoError::InvalidChunkSize(data.len() as u32);
+        let u32_at = |offset: usize| -> Result<u32> {
+            let bytes = data.get(offset..offset + 4).ok_or_else(too_short)?;
+            Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+        };
+
+        let vertices_x = u32_at(0)?;
+        let vertices_y = u32_at(4)?;
+        let cells_x = u32_at(8)? as usize;
+        let cells_y = u32_at(12)? as usize;
+
+        // A group can have this chunk with no grid. The wiki says such a group can still be full
+        // of liquid, up to the top of its bounds, which isn't handled here.
+        if cells_x == 0 || cells_y == 0 {
+            return Ok(Self::default());
+        }
+
+        if cells_x + 1 != vertices_x as usize || cells_y + 1 != vertices_y as usize {
+            return Err(WmoError::InvalidFormat(format!(
+                "MLIQ has {cells_x}x{cells_y} cells but {vertices_x}x{vertices_y} vertices"
+            )));
+        }
+
+        let corner = [
+            f32::from_bits(u32_at(16)?),
+            f32::from_bits(u32_at(20)?),
+            f32::from_bits(u32_at(24)?),
+        ];
+
+        // Each vertex holds 4 bytes of flow or texture data, then its height.
+        let vertex_count = vertices_x as usize * vertices_y as usize;
+        let vertices = data
+            .get(MLIQ_HEADER_BYTES..MLIQ_HEADER_BYTES + vertex_count * MLIQ_VERTEX_BYTES)
+            .ok_or_else(too_short)?;
+        let heights = vertices
+            .chunks_exact(MLIQ_VERTEX_BYTES)
+            .map(|v| f32::from_le_bytes(v[4..8].try_into().unwrap()))
+            .collect();
+
+        let cells_start = MLIQ_HEADER_BYTES + vertices.len();
+        let cells = data
+            .get(cells_start..cells_start + cells_x * cells_y)
+            .ok_or_else(too_short)?;
+
+        Ok(Self {
+            vertices_x,
+            vertices_y,
+            corner,
+            heights,
+            cells: cells
+                .iter()
+                .map(|c| u8::from(c & MLIQ_NO_LIQUID != MLIQ_NO_LIQUID))
+                .collect(),
+            first_cell_kind: cells
+                .iter()
+                .map(|c| c & MLIQ_NO_LIQUID)
+                .find(|&kind| kind != MLIQ_NO_LIQUID),
+        })
+    }
+
+    /// The liquid's row in LiquidType.dbc, worked out as the 3.3.5a client does, from the root's
+    /// flags and the group's flags and liquid field. 0 when it can't be told.
+    pub fn liquid_type(&self, root_flags: u32, group_flags: u32, group_liquid: u32) -> u32 {
+        let mut entry = if root_flags & ROOT_LIQUID_IS_ROW != 0 {
+            group_liquid
+        } else if group_liquid == MLIQ_NO_LIQUID as u32 {
+            0
+        } else {
+            group_liquid + 1
+        };
+
+        if entry == 0 {
+            entry = self.first_cell_kind.map_or(0, |kind| kind as u32 + 1);
+        }
+
+        // Low values name a kind of liquid rather than a row.
+        if entry == 0 || entry >= 21 {
+            return entry;
+        }
+        match (entry - 1) & 3 {
+            0 if group_flags & GROUP_OCEAN_WATER != 0 => 14,
+            0 => 13,
+            1 => 14,
+            2 => 19,
+            _ => 20,
+        }
+    }
 }
 
 /// The chunks of a block, in file order, with their magics as they read in the docs.
@@ -225,6 +347,7 @@ impl RenderRoot {
 
         let header = header.ok_or_else(|| WmoError::MissingRequiredChunk("MOHD".into()))?;
         let mut root = Self {
+            flags: header.flags as u32,
             group_count: header.group_count,
             bounds_min: vec3(&header.bounds_min),
             bounds_max: vec3(&header.bounds_max),
@@ -275,7 +398,11 @@ impl RenderGroup {
                     return Err(WmoError::InvalidChunkSize(body.len() as u32));
                 }
                 let flags = u32::from_le_bytes(body[8..12].try_into().unwrap());
-                return Self::parse_body(flags, &body[GROUP_HEADER_BYTES..]);
+                let mut group = Self::parse_body(flags, &body[GROUP_HEADER_BYTES..])?;
+                group.group_liquid = u32::from_le_bytes(
+                    body[GROUP_LIQUID_OFFSET..GROUP_LIQUID_OFFSET + 4].try_into().unwrap(),
+                );
+                return Ok(group);
             }
         }
         Err(WmoError::MissingRequiredChunk("MOGP".into()))
@@ -307,6 +434,7 @@ impl RenderGroup {
                     read_colors = true;
                     group.colors = body.chunks_exact(4).map(|c| [c[2], c[1], c[0], c[3]]).collect();
                 }
+                b"MLIQ" => group.liquid = Some(RenderLiquid::parse(body)?),
                 b"MOBA" => {
                     group.batches = records::<WmoBatchRecord>("MOBA", body)?
                         .iter()
@@ -361,6 +489,63 @@ impl RenderGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn liquid_chunk() -> Vec<u8> {
+        let mut data = Vec::new();
+        for value in [3u32, 2, 2, 1] {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        data.extend_from_slice(&floats(&[1.0, 2.0, 3.0]));
+        data.extend_from_slice(&7u16.to_le_bytes());
+        for height in 0..6 {
+            data.extend_from_slice(&[0; 4]);
+            data.extend_from_slice(&(height as f32).to_le_bytes());
+        }
+        data.extend_from_slice(&[0x4F, 0x42]);
+        data
+    }
+
+    #[test]
+    fn reads_a_liquid_grid() {
+        let liquid = RenderLiquid::parse(&liquid_chunk()).unwrap();
+        assert_eq!((liquid.vertices_x, liquid.vertices_y), (3, 2));
+        assert_eq!(liquid.corner, [1.0, 2.0, 3.0]);
+        assert_eq!(liquid.heights, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(liquid.cells, vec![0, 1]);
+    }
+
+    #[test]
+    fn a_liquid_chunk_with_no_cells_is_empty_rather_than_an_error() {
+        let mut data = vec![0u8; MLIQ_HEADER_BYTES];
+        data[0] = 1;
+        data[4] = 1;
+        let liquid = RenderLiquid::parse(&data).unwrap();
+        assert!(liquid.cells.is_empty());
+        assert!(liquid.heights.is_empty());
+    }
+
+    #[test]
+    fn rejects_a_truncated_liquid_grid() {
+        let data = liquid_chunk();
+        assert!(RenderLiquid::parse(&data[..data.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn works_out_liquid_types_as_the_client_does() {
+        // The first cell with liquid says kind 2, magma.
+        let liquid = RenderLiquid::parse(&liquid_chunk()).unwrap();
+
+        // The root says the field is already a row.
+        assert_eq!(liquid.liquid_type(ROOT_LIQUID_IS_ROW, 0, 41), 41);
+        // Otherwise it's one less than a kind.
+        assert_eq!(liquid.liquid_type(0, 0, 0), 13);
+        assert_eq!(liquid.liquid_type(0, GROUP_OCEAN_WATER, 0), 14);
+        assert_eq!(liquid.liquid_type(0, 0, 1), 14);
+        assert_eq!(liquid.liquid_type(0, 0, 2), 19);
+        assert_eq!(liquid.liquid_type(0, 0, 3), 20);
+        // 15 means the cells decide.
+        assert_eq!(liquid.liquid_type(0, 0, 15), 19);
+    }
 
     fn chunk(magic: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut out = magic.iter().rev().copied().collect::<Vec<_>>();

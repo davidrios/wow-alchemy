@@ -8,6 +8,7 @@ mod chunk;
 mod converter;
 mod error;
 mod io_helpers;
+mod liquid;
 mod liquid_converter;
 mod mcnk_converter;
 mod mcnk_subchunks;
@@ -39,6 +40,10 @@ pub use alpha_map::{
     MCNK_DO_NOT_FIX_ALPHA_MAP, decode_alpha_map,
 };
 pub use chunk::*;
+pub use liquid::{
+    LIQUID_CELLS_PER_SIDE, LIQUID_VERTICES, LIQUID_VERTICES_PER_SIDE, LiquidLayer, parse_mh2o,
+    read_liquid_layers,
+};
 pub use converter::convert_adt;
 pub use error::{AdtError, Result};
 pub use mcnk_converter::{convert_mcnk, convert_mcnk_chunks};

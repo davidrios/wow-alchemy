@@ -10,7 +10,7 @@ use wow_alchemy_data::types::{VWowStructR, WowStructR};
 use wow_alchemy_m2::chunks::M2Vertex;
 use wow_alchemy_m2::skin::SkinVersion;
 use wow_alchemy_m2::{M2Model, Skin};
-use wow_alchemy_wmo::render::{RenderGroup, RenderRoot};
+use wow_alchemy_wmo::render::{RenderGroup, RenderLiquid, RenderRoot};
 
 use crate::{WaBuffer, WaStatus, bytes_arg, guard};
 
@@ -338,6 +338,23 @@ pub struct WaWmo {
 pub struct WaWmoGroup {
     mesh: StoredMesh,
     flags: u32,
+    liquid: Option<RenderLiquid>,
+    group_liquid: u32,
+}
+
+/// A group's liquid surface, on a grid in the WMO's own space.
+#[repr(C)]
+pub struct WaWmoLiquid {
+    pub vertices_x: u32,
+    pub vertices_y: u32,
+    /// The grid's corner: X, Y, Z.
+    pub corner: [f32; 3],
+    /// vertices_x * vertices_y heights, row by row.
+    pub heights: *const f32,
+    /// (vertices_x - 1) * (vertices_y - 1) bytes, row by row: nonzero when the cell has liquid.
+    pub cells: *const u8,
+    /// Row in LiquidType.dbc.
+    pub liquid_type: u32,
 }
 
 #[unsafe(no_mangle)]
@@ -354,6 +371,11 @@ pub unsafe extern "C" fn wa_wmo_free(wmo: *mut WaWmo) {
     if !wmo.is_null() {
         drop(unsafe { Box::from_raw(wmo) });
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_wmo_flags(wmo: *const WaWmo) -> u32 {
+    unsafe { &*wmo }.root.flags
 }
 
 #[unsafe(no_mangle)]
@@ -463,7 +485,8 @@ pub unsafe extern "C" fn wa_wmo_doodad_name(
 pub unsafe extern "C" fn wa_wmo_group_open(data: *const u8, len: usize) -> *mut WaWmoGroup {
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
-        let group = RenderGroup::parse(bytes).map_err(|e| e.to_string())?;
+        let mut group = RenderGroup::parse(bytes).map_err(|e| e.to_string())?;
+        let liquid = group.liquid.take();
         let widen = |indices: &[u16]| indices.iter().map(|&i| i as u32).collect::<Vec<_>>();
         let mesh = StoredMesh {
             indices: widen(&group.indices),
@@ -485,6 +508,8 @@ pub unsafe extern "C" fn wa_wmo_group_open(data: *const u8, len: usize) -> *mut 
         Ok(Box::into_raw(Box::new(WaWmoGroup {
             mesh,
             flags: group.flags,
+            liquid,
+            group_liquid: group.group_liquid,
         })))
     })
 }
@@ -504,6 +529,33 @@ pub unsafe extern "C" fn wa_wmo_group_mesh(group: *const WaWmoGroup, out: *mut W
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_group_flags(group: *const WaWmoGroup) -> u32 {
     unsafe { &*group }.flags
+}
+
+/// Whether the group has liquid. `root_flags` comes from wa_wmo_flags, because the root decides
+/// how the group's liquid type reads. The pointers stay valid until the group is freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_wmo_group_liquid(
+    group: *const WaWmoGroup,
+    root_flags: u32,
+    out: *mut WaWmoLiquid,
+) -> WaStatus {
+    let group = unsafe { &*group };
+    match &group.liquid {
+        Some(liquid) => {
+            unsafe {
+                out.write(WaWmoLiquid {
+                    vertices_x: liquid.vertices_x,
+                    vertices_y: liquid.vertices_y,
+                    corner: liquid.corner,
+                    heights: liquid.heights.as_ptr(),
+                    cells: liquid.cells.as_ptr(),
+                    liquid_type: liquid.liquid_type(root_flags, group.flags, group.group_liquid),
+                })
+            };
+            WaStatus::Ok
+        }
+        None => WaStatus::NotFound,
+    }
 }
 
 // ---- Textures ----
