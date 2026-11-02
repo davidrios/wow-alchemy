@@ -450,6 +450,8 @@ WaStatus wa_wmo_portal_ref(const WaWmo *wmo, uint32_t index, WaWmoPortalRef *out
 void wa_wmo_group_bounds(const WaWmoGroup *group, float *out);
 /* The group's range of wa_wmo_portal_ref. */
 void wa_wmo_group_portal_refs(const WaWmoGroup *group, uint32_t *start, uint32_t *count);
+/* How many of the mesh's batches, from the first, are transition batches. */
+uint32_t wa_wmo_group_transition_batch_count(const WaWmoGroup *group);
 /* The WMO's ambient color, as stored: 0xAARRGGBB. */
 uint32_t wa_wmo_ambient_color(const WaWmo *wmo);
 uint32_t wa_wmo_flags(const WaWmo *wmo);

@@ -1263,6 +1263,7 @@ pub struct WaWmoGroup {
     doodad_refs: Vec<u16>,
     bounds: [f32; 6],
     portal_start: u32,
+    transition_batch_count: u32,
     portal_count: u32,
     flags: u32,
     liquid: Option<RenderLiquid>,
@@ -1437,6 +1438,7 @@ pub unsafe extern "C" fn wa_wmo_group_open(data: *const u8, len: usize) -> *mut 
             doodad_refs: group.doodad_refs,
             bounds: group.bounds,
             portal_start: group.portal_start,
+            transition_batch_count: group.transition_batch_count,
             portal_count: group.portal_count,
             flags: group.flags,
             liquid,
@@ -1577,6 +1579,12 @@ pub unsafe extern "C" fn wa_wmo_group_portal_refs(
         start.write(group.portal_start);
         count.write(group.portal_count);
     }
+}
+
+/// How many of the mesh's batches, from the first, are transition batches.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_wmo_group_transition_batch_count(group: *const WaWmoGroup) -> u32 {
+    unsafe { &*group }.transition_batch_count
 }
 
 /// The WMO's ambient color, as stored: 0xAARRGGBB.

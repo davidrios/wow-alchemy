@@ -213,6 +213,8 @@ pub struct RenderGroup {
     /// The group's range of [`RenderRoot::portal_refs`], from MOGP's header.
     pub portal_start: u32,
     pub portal_count: u32,
+    /// How many of [`RenderGroup::batches`], from the first, are transition batches, from MOGP's header.
+    pub transition_batch_count: u32,
     /// The liquid field of the group's header. See [`RenderLiquid::liquid_type`].
     pub group_liquid: u32,
     pub liquid: Option<RenderLiquid>,
@@ -462,6 +464,7 @@ impl RenderGroup {
                     let at = 12 + i * 4;
                     *bound = f32::from_le_bytes(body[at..at + 4].try_into().unwrap());
                 }
+                group.transition_batch_count = u16::from_le_bytes(body[40..42].try_into().unwrap()) as u32;
                 group.portal_start = u16::from_le_bytes(body[36..38].try_into().unwrap()) as u32;
                 group.portal_count = u16::from_le_bytes(body[38..40].try_into().unwrap()) as u32;
                 group.group_liquid = u32::from_le_bytes(
