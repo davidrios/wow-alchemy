@@ -287,6 +287,47 @@ typedef struct WaM2 WaM2;
 
 /* An M2 and its .skin file. Returns NULL on failure. */
 WaM2 *wa_m2_open(const uint8_t *m2, size_t m2_len, const uint8_t *skin, size_t skin_len);
+
+/* A particle emitter's settings. Animated ones are their first key, of the first sequence that
+   has any. Colors are 0 to 255, three keys over a particle's life at 0, mid and 1. */
+typedef struct WaM2Emitter {
+    uint32_t flags;
+    /* In the model's axes and space, not its bone's. */
+    float position[3];
+    int32_t bone;
+    /* For wa_m2_texture_name and wa_m2_texture_type. */
+    uint32_t texture;
+    uint32_t blend;
+    uint32_t emitter_type;
+    uint32_t particle_type;
+    uint32_t rows;
+    uint32_t columns;
+    float speed;
+    float speed_variation;
+    float vertical_range;
+    float horizontal_range;
+    float gravity;
+    float lifespan;
+    float lifespan_variation;
+    float rate;
+    float rate_variation;
+    float area_length;
+    float area_width;
+    float mid;
+    float colors[9];
+    float alphas[3];
+    float sizes[3];
+    /* 0 when the emitter starts switched off. */
+    uint32_t enabled;
+    /* Which tile of the texture shows over a particle's life, as up to 4 keys of a time from 0
+       to 1 and a tile. Between keys it runs from one to the next. 0 keys means no animation. */
+    uint32_t cell_count;
+    float cell_times[4];
+    float cell_values[4];
+} WaM2Emitter;
+
+uint32_t wa_m2_emitter_count(const WaM2 *model);
+WaStatus wa_m2_emitter(const WaM2 *model, uint32_t index, WaM2Emitter *out);
 void wa_m2_free(WaM2 *model);
 void wa_m2_mesh(const WaM2 *model, WaMesh *out);
 float wa_m2_bounding_radius(const WaM2 *model);

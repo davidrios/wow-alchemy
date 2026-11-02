@@ -8,6 +8,14 @@ use wow_alchemy_blp::parser::load_blp_from_buf;
 use wow_alchemy_blp::types::BlpContent;
 use wow_alchemy_data::prelude::{WowHeaderR, WowHeaderW};
 use wow_alchemy_data::types::{C3Vector, VWowStructR, WowStructR};
+use wow_alchemy_data::types::C2Vector;
+use wow_alchemy_m2::chunks::animation::{M2AnimationTrackData, TrackVec};
+use wow_alchemy_m2::chunks::particle_emitter::{
+    M2ParticleEmitter, M2ParticleEmitterBlending, M2ParticleEmitterColorAnimation,
+    M2ParticleEmitterEmissionRateVary, M2ParticleEmitterHeader, M2ParticleEmitterLifespanVary,
+    M2ParticleEmitterMultiTextureParam,
+};
+use wow_alchemy_m2::md20::MD20Model;
 use wow_alchemy_m2::chunks::M2Vertex;
 use wow_alchemy_m2::chunks::animation::{
     M2AnimationBlending, M2AnimationFlags, M2AnimationTiming, M2AnimationTrackHeader, TrackArray,
@@ -239,6 +247,7 @@ pub struct WaM2 {
     bone_indices: Vec<[u8; 4]>,
     bones: Vec<WaM2Bone>,
     bone_headers: Vec<M2BoneHeader>,
+    emitters: Vec<WaM2Emitter>,
     sequences: Vec<WaM2Sequence>,
     global_sequences: Vec<u32>,
     attachments: Vec<WaM2Attachment>,
@@ -405,6 +414,7 @@ fn store_m2(m2: &[u8], skin: &[u8]) -> Result<WaM2, String> {
         })
         .collect();
     let bone_headers = md20.bones.iter().map(|bone| bone.header.clone()).collect();
+    let emitters = store_emitters(&md20);
 
     let sequences = md20
         .animations
@@ -519,6 +529,7 @@ fn store_m2(m2: &[u8], skin: &[u8]) -> Result<WaM2, String> {
         bone_indices,
         bones,
         bone_headers,
+        emitters,
         sequences,
         global_sequences,
         attachments,
@@ -624,6 +635,153 @@ fn store_clip(model: &WaM2, sequence: usize, keys: &[u8]) -> Result<WaM2Clip, St
         tracks,
         event_times,
     })
+}
+
+/// A particle emitter's settings. Animated ones are their first key, of the first sequence
+/// that has any. Colors are 0 to 255, three keys over a particle's life at 0, mid and 1.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WaM2Emitter {
+    pub flags: u32,
+    /// In the model's axes and space, not its bone's.
+    pub position: [f32; 3],
+    pub bone: i32,
+    /// For wa_m2_texture_name and wa_m2_texture_type.
+    pub texture: u32,
+    pub blend: u32,
+    pub emitter_type: u32,
+    pub particle_type: u32,
+    pub rows: u32,
+    pub columns: u32,
+    pub speed: f32,
+    pub speed_variation: f32,
+    pub vertical_range: f32,
+    pub horizontal_range: f32,
+    pub gravity: f32,
+    pub lifespan: f32,
+    pub lifespan_variation: f32,
+    pub rate: f32,
+    pub rate_variation: f32,
+    pub area_length: f32,
+    pub area_width: f32,
+    pub mid: f32,
+    pub colors: [f32; 9],
+    pub alphas: [f32; 3],
+    pub sizes: [f32; 3],
+    /// 0 when the emitter starts switched off.
+    pub enabled: u32,
+    /// Which tile of the texture shows over a particle's life, as up to 4 keys of a time from 0
+    /// to 1 and a tile. Between keys it runs from one to the next. 0 keys means no animation.
+    pub cell_count: u32,
+    pub cell_times: [f32; 4],
+    pub cell_values: [f32; 4],
+}
+
+fn first_key<T: Copy>(values: &TrackVec<T>) -> Option<T> {
+    match values {
+        TrackVec::Single(keys) => keys.first().copied(),
+        TrackVec::Multiple(sequences) => sequences.iter().find_map(|keys| keys.first().copied()),
+    }
+}
+
+/// The value at each of three keys, repeating the last when there are fewer.
+fn three_keys<T: Copy>(keys: &[T], fallback: T) -> [T; 3] {
+    let at = |i: usize| keys.get(i).or(keys.last()).copied().unwrap_or(fallback);
+    [at(0), at(1), at(2)]
+}
+
+fn store_emitters(md20: &MD20Model) -> Vec<WaM2Emitter> {
+    md20.particle_emitter_headers
+        .iter()
+        .zip(&md20.particle_emitters)
+        .filter_map(|(header, data)| {
+            let (M2ParticleEmitterHeader::PreCata(header), M2ParticleEmitter::PreCata(data)) = (header, data) else {
+                return None;
+            };
+            let M2ParticleEmitterColorAnimation::Later {
+                color_animation,
+                alpha_animation,
+                scale_animation,
+                head_cell_animation,
+                ..
+            } = &data.color_animation
+            else {
+                return None;
+            };
+            let (blend, emitter_type) = match header.blending_type {
+                M2ParticleEmitterBlending::Vanilla { blending_type, emitter_type } => (blending_type as u32, emitter_type as u32),
+                M2ParticleEmitterBlending::Later { blending_type, emitter_type, .. } => (blending_type as u32, emitter_type as u32),
+            };
+            let particle_type = match header.multi_texture_param {
+                M2ParticleEmitterMultiTextureParam::PreCata { particle_type, .. } => particle_type as u32,
+                M2ParticleEmitterMultiTextureParam::AfterCata(particle_type) => particle_type as u32,
+            };
+            let vary = |lifespan: bool| match (&header.lifespan_vary, &header.emission_rate_vary) {
+                (M2ParticleEmitterLifespanVary::Some(v), _) if lifespan => *v,
+                (_, M2ParticleEmitterEmissionRateVary::Some(v)) if !lifespan => *v,
+                _ => 0.0,
+            };
+            let float = |track: &M2AnimationTrackData<f32>| first_key(&track.values).unwrap_or(0.0);
+            let white = C3Vector { x: 255.0, y: 255.0, z: 255.0 };
+            let colors = three_keys(&color_animation.values, white);
+            let alphas = three_keys(&alpha_animation.values, 32767);
+            let sizes = three_keys(&scale_animation.values, C2Vector { x: 1.0, y: 1.0 });
+            let mid = color_animation
+                .timestamps
+                .get(1)
+                .map_or(0.5, |t| (*t as f32 / 32767.0).clamp(0.01, 0.99));
+            Some(WaM2Emitter {
+                flags: header.flags.bits(),
+                position: [header.position.x, header.position.y, header.position.z],
+                bone: header.bone_index as i32,
+                texture: header.texture_index as u32,
+                blend,
+                emitter_type,
+                particle_type,
+                rows: header.texture_dimension_rows.max(1) as u32,
+                columns: header.texture_dimension_cols.max(1) as u32,
+                speed: float(&data.emission_speed),
+                speed_variation: float(&data.speed_variation),
+                vertical_range: float(&data.vertical_range),
+                horizontal_range: float(&data.horizontal_range),
+                gravity: float(&data.gravity),
+                lifespan: float(&data.lifespan),
+                lifespan_variation: vary(true),
+                rate: float(&data.emission_rate),
+                rate_variation: vary(false),
+                area_length: float(&data.emission_area_length),
+                area_width: float(&data.emission_area_width),
+                mid,
+                colors: [
+                    colors[0].x, colors[0].y, colors[0].z,
+                    colors[1].x, colors[1].y, colors[1].z,
+                    colors[2].x, colors[2].y, colors[2].z,
+                ],
+                alphas: alphas.map(|a| a as f32 / 32767.0),
+                sizes: sizes.map(|s| s.x),
+                enabled: first_key(&data.enabled_in.values).map_or(1, |v| v as u32),
+                cell_count: head_cell_animation.values.len().min(4) as u32,
+                cell_times: std::array::from_fn(|i| head_cell_animation.timestamps.get(i).map_or(1.0, |t| *t as f32 / 32767.0)),
+                cell_values: std::array::from_fn(|i| head_cell_animation.values.get(i).map_or(0.0, |v| *v as f32)),
+            })
+        })
+        .collect()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_m2_emitter_count(model: *const WaM2) -> u32 {
+    unsafe { &*model }.emitters.len() as u32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_m2_emitter(model: *const WaM2, index: u32, out: *mut WaM2Emitter) -> WaStatus {
+    match unsafe { &*model }.emitters.get(index as usize) {
+        Some(emitter) => {
+            unsafe { out.write(*emitter) };
+            WaStatus::Ok
+        }
+        None => WaStatus::NotFound,
+    }
 }
 
 #[unsafe(no_mangle)]

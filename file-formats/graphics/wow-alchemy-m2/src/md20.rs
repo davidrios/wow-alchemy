@@ -1,3 +1,4 @@
+use crate::chunks::particle_emitter::M2ParticleEmitterHeader;
 use wow_alchemy_data::error::Result as WDResult;
 use wow_alchemy_data::{prelude::*, v_wow_collection, wow_collection};
 
@@ -92,6 +93,8 @@ pub struct MD20Model {
     pub ribbon_emitters: Vec<M2RibbonEmitter>,
     #[debug(with = debug::trimmed_collection_fmt)]
     pub particle_emitters: Vec<M2ParticleEmitter>,
+    /// The same emitters' headers, which hold their flags, position and static settings.
+    pub particle_emitter_headers: Vec<M2ParticleEmitterHeader>,
     pub texture_combiner_combos: M2TextureCombinerCombos,
 }
 
@@ -202,11 +205,16 @@ impl WowStructR for MD20Model {
             }
         );
 
+        let mut particle_emitter_headers = Vec::new();
         let particle_emitters = v_wow_collection!(
             reader,
             header.version,
             header.particle_emitters,
-            |reader, item_header| reader.v_new_from_header(&item_header)?
+            |reader, item_header| {
+                let emitter = reader.v_new_from_header(&item_header)?;
+                particle_emitter_headers.push(item_header);
+                emitter
+            }
         );
 
         Ok(Self {
@@ -247,6 +255,7 @@ impl WowStructR for MD20Model {
             ribbon_emitters,
             camera_lookup_table: reader.new_from_header(&header.camera_lookup_table)?,
             particle_emitters,
+            particle_emitter_headers,
             texture_combiner_combos: reader.new_from_header(&header.texture_combiner_combos)?,
             header,
         })
