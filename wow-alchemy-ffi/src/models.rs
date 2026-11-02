@@ -1230,6 +1230,8 @@ pub struct WaWmoMaterial {
     pub flags: u32,
     /// 0 opaque, 1 alpha key, 2 alpha, 3 additive, 4 and 5 modulate.
     pub blend_mode: u32,
+    /// MOMT's shader: 0 diffuse, 1 specular, 2 metal, 3 environment, 4 opaque, 5 environment metal, and so on.
+    pub shader: u32,
 }
 
 #[repr(C)]
@@ -1335,6 +1337,7 @@ pub unsafe extern "C" fn wa_wmo_material(
             out.write(WaWmoMaterial {
                 flags: material.flags,
                 blend_mode: material.blend_mode,
+                shader: material.shader,
             });
             write_name(Some(&material.texture), texture, texture_len)
         },

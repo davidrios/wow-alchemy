@@ -381,6 +381,7 @@ WaStatus wa_m2_clip_track(const WaM2Clip *clip, uint32_t bone, uint32_t kind, Wa
 typedef struct WaWmoMaterial {
     uint32_t flags;
     uint32_t blend_mode;
+    uint32_t shader;
 } WaWmoMaterial;
 
 typedef struct WaWmoDoodadSet {

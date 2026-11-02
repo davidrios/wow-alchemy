@@ -138,6 +138,7 @@ pub struct WmoTriangleRecord {
 #[derive(Debug, Clone)]
 pub struct RenderMaterial {
     pub flags: u32,
+    pub shader: u32,
     pub blend_mode: u32,
     pub texture: String,
 }
@@ -414,6 +415,7 @@ impl RenderRoot {
             .iter()
             .map(|m| RenderMaterial {
                 flags: m.flags,
+                shader: m.shader,
                 blend_mode: m.blend_mode,
                 texture: string_at(textures, m.texture_1 as usize),
             })
