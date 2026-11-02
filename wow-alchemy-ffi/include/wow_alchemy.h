@@ -101,6 +101,8 @@ typedef struct WaTerrainChunk {
     const uint8_t *alpha;
     /* 145 colors of 4 bytes as stored: blue, green, red, alpha. 127 is neutral. */
     const uint8_t *vertex_colors;
+    /* One bit per cell of the chunk's 8 by 8, row by row: no ground effect doodads there. */
+    uint64_t no_effect_doodad;
 } WaTerrainChunk;
 
 /* An ADT terrain tile, fully parsed by this call. Set big_alpha to the WDT's

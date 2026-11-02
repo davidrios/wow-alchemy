@@ -36,6 +36,8 @@ pub struct WaTerrainChunk {
     pub alpha: *const u8,
     /// 145 colors of 4 bytes as stored in the file: blue, green, red, alpha, with 127 neutral.
     pub vertex_colors: *const u8,
+    /// One bit per cell of the chunk's 8 by 8, row by row: no ground effect doodads there.
+    pub no_effect_doodad: u64,
 }
 
 struct StoredChunk {
@@ -44,6 +46,7 @@ struct StoredChunk {
     flags: u32,
     area_id: u32,
     holes: u32,
+    no_effect_doodad: u64,
     position: [f32; 3],
     heights: Vec<f32>,
     normals: Vec<i8>,
@@ -166,6 +169,8 @@ fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String
         area_id: chunk.area_id,
         // Only the low 16 bits hold the hole mask.
         holes: chunk.holes & 0xFFFF,
+        // The parser reads these 8 bytes of the header as two u32s.
+        no_effect_doodad: u64::from(chunk.pred_tex) | (u64::from(chunk.n_effect_doodad) << 32),
         // McnkChunk orders this [file 1, file 2, file 0], and the file stores
         // north, west, height.
         position: [chunk.position[2], chunk.position[0], chunk.position[1]],
@@ -359,6 +364,7 @@ pub unsafe extern "C" fn wa_adt_chunk(
                     effect_ids: chunk.effect_ids,
                     alpha: chunk.alpha.as_ptr(),
                     vertex_colors: chunk.vertex_colors.as_ptr(),
+                    no_effect_doodad: chunk.no_effect_doodad,
                 })
             };
             WaStatus::Ok
