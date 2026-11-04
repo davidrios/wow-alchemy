@@ -20,9 +20,10 @@ pub fn quantize_rgba(
         .color_map_rgb()
         .chunks(3)
         .map(|col| {
-            let red = col[0] as u32;
+            // Stored BGRA, as a little-endian 0xAARRGGBB, the same as palettized files.
+            let red = (col[0] as u32) << 16;
             let green = (col[1] as u32) << 8;
-            let blue = (col[2] as u32) << 16;
+            let blue = col[2] as u32;
             red + green + blue
         })
         .collect();

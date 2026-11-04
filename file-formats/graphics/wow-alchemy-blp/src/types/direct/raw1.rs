@@ -7,10 +7,11 @@ use crate::types::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlpRaw1 {
     /// The cmap field array is the colour look up table used for an indexed
-    /// colour model. Each element represents 24 bit RGB colour component values
-    /// in the order of 0xBBGGRR. The final byte is alignment padding and will
-    /// not alter the decoded image in any way. One might be able to improve the
-    /// file compressibility by carefully choosing padding values.
+    /// colour model. Each element is stored as the bytes blue, green, red and a
+    /// padding byte, so read as a little-endian u32 it is 0x00RRGGBB, with blue
+    /// in the low byte. The padding byte will not alter the decoded image in any
+    /// way. One might be able to improve the file compressibility by carefully
+    /// choosing padding values.
     pub cmap: Vec<u32>,
     /// Image itself and all mipmaps levels. If there are no mipmaps,
     /// the length of the vector is 1.
