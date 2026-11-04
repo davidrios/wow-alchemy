@@ -248,6 +248,9 @@ pub struct WaM2 {
     bones: Vec<WaM2Bone>,
     bone_headers: Vec<M2BoneHeader>,
     emitters: Vec<WaM2Emitter>,
+    /// Each emitter's on and off keys, by sequence, and the global sequence they loop on (-1 for
+    /// none), in the order of `emitters`.
+    emitter_switches: Vec<(TrackVec<u32>, TrackVec<u8>, i16)>,
     sequences: Vec<WaM2Sequence>,
     global_sequences: Vec<u32>,
     attachments: Vec<WaM2Attachment>,
@@ -414,7 +417,7 @@ fn store_m2(m2: &[u8], skin: &[u8]) -> Result<WaM2, String> {
         })
         .collect();
     let bone_headers = md20.bones.iter().map(|bone| bone.header.clone()).collect();
-    let emitters = store_emitters(&md20);
+    let (emitters, emitter_switches) = store_emitters(&md20).into_iter().unzip();
 
     let sequences = md20
         .animations
@@ -530,6 +533,7 @@ fn store_m2(m2: &[u8], skin: &[u8]) -> Result<WaM2, String> {
         bones,
         bone_headers,
         emitters,
+        emitter_switches,
         sequences,
         global_sequences,
         attachments,
@@ -690,7 +694,7 @@ fn three_keys<T: Copy>(keys: &[T], fallback: T) -> [T; 3] {
     [at(0), at(1), at(2)]
 }
 
-fn store_emitters(md20: &MD20Model) -> Vec<WaM2Emitter> {
+fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVec<u8>, i16))> {
     md20.particle_emitter_headers
         .iter()
         .zip(&md20.particle_emitters)
@@ -730,7 +734,8 @@ fn store_emitters(md20: &MD20Model) -> Vec<WaM2Emitter> {
                 .timestamps
                 .get(1)
                 .map_or(0.5, |t| (*t as f32 / 32767.0).clamp(0.01, 0.99));
-            Some(WaM2Emitter {
+            let switches = (data.enabled_in.timestamps.clone(), data.enabled_in.values.clone(), header.enabled_in.global_sequence);
+            Some((WaM2Emitter {
                 flags: header.flags.bits(),
                 position: [header.position.x, header.position.y, header.position.z],
                 bone: header.bone_index as i32,
@@ -763,9 +768,56 @@ fn store_emitters(md20: &MD20Model) -> Vec<WaM2Emitter> {
                 cell_count: head_cell_animation.values.len().min(4) as u32,
                 cell_times: std::array::from_fn(|i| head_cell_animation.timestamps.get(i).map_or(1.0, |t| *t as f32 / 32767.0)),
                 cell_values: std::array::from_fn(|i| head_cell_animation.values.get(i).map_or(0.0, |v| *v as f32)),
-            })
+            }, switches))
         })
         .collect()
+}
+
+/// The keys of one sequence of a track, or every sequence's when it has one set for all.
+fn sequence_keys<T>(track: &TrackVec<T>, sequence: usize) -> &[T] {
+    match track {
+        TrackVec::Single(keys) => keys,
+        TrackVec::Multiple(sequences) => sequences.get(sequence).map_or(&[], |keys| keys.as_slice()),
+    }
+}
+
+/// An emitter's on and off keys in a sequence: times in milliseconds and values, 0 for off.
+/// Writes up to `capacity` of each and returns how many there are, which may be more. When the
+/// track loops on a global sequence, `global` is its index, and the keys are that loop's, the
+/// same in every sequence; otherwise -1. An emitter with no keys is on throughout, unless
+/// `wa_m2_emitter`'s `enabled` says it starts off.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_m2_emitter_switches(
+    model: *const WaM2,
+    emitter: u32,
+    sequence: u32,
+    times: *mut u32,
+    values: *mut u8,
+    capacity: u32,
+    global: *mut i32,
+) -> u32 {
+    let model = unsafe { &*model };
+    let Some((track_times, track_values, global_sequence)) = model.emitter_switches.get(emitter as usize) else {
+        return 0;
+    };
+
+    // A global sequence's keys sit in the first slot, whatever sequence plays.
+    let slot = if *global_sequence >= 0 { 0 } else { sequence as usize };
+    if !global.is_null() {
+        unsafe { global.write(*global_sequence as i32) };
+    }
+
+    let times_in = sequence_keys(track_times, slot);
+    let values_in = sequence_keys(track_values, slot);
+    let count = times_in.len().min(values_in.len());
+    for i in 0..count.min(capacity as usize) {
+        unsafe {
+            times.add(i).write(times_in[i]);
+            values.add(i).write(values_in[i]);
+        }
+    }
+
+    count as u32
 }
 
 #[unsafe(no_mangle)]
