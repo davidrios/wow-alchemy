@@ -10,7 +10,7 @@ use wow_alchemy_adt::{
 use wow_alchemy_wdt::WdtReader;
 use wow_alchemy_wdt::version::WowVersion;
 
-use crate::{WaStatus, bytes_arg, guard};
+use crate::{WaBuffer, WaStatus, bytes_arg, guard};
 
 const CHUNKS_PER_TILE: usize = 256;
 const TILES_PER_MAP: usize = 64 * 64;
@@ -205,6 +205,46 @@ pub unsafe extern "C" fn wa_wdt_read(
         }
 
         unsafe { flags.write(wdt.mphd.flags.bits()) };
+        Ok(WaStatus::Ok)
+    })
+}
+
+/// The WMO a map is made of when it has no terrain, as most instances are: its file name, as a
+/// buffer to free with `wa_buffer_free`, and its placement, in the same coordinates as an ADT's.
+/// Returns `NotFound` for a map without one.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_wdt_global_wmo(
+    data: *const u8,
+    len: usize,
+    name: *mut WaBuffer,
+    placement: *mut WaPlacement,
+) -> WaStatus {
+    guard(WaStatus::Error, || {
+        unsafe { name.write(WaBuffer::EMPTY) };
+        let bytes = unsafe { bytes_arg(data, len) }?;
+        let wdt = WdtReader::new(Cursor::new(bytes), WowVersion::WotLK)
+            .read()
+            .map_err(|e| e.to_string())?;
+
+        let file = wdt.mwmo.as_ref().and_then(|c| c.filenames.first());
+        let entry = wdt.modf.as_ref().and_then(|c| c.entries.first());
+        let (Some(file), Some(entry)) = (file, entry) else {
+            return Ok(WaStatus::NotFound);
+        };
+
+        unsafe {
+            name.write(WaBuffer::from_vec(file.clone().into_bytes()));
+            placement.write(WaPlacement {
+                name: 0,
+                unique_id: entry.unique_id,
+                position: entry.position,
+                rotation: entry.rotation,
+                scale: 1.0,
+                doodad_set: entry.doodad_set as u32,
+                bounds_min: entry.lower_bounds,
+                bounds_max: entry.upper_bounds,
+            })
+        };
         Ok(WaStatus::Ok)
     })
 }
@@ -452,6 +492,75 @@ mod tests {
         let status =
             unsafe { wa_wdt_read(bytes.as_ptr(), bytes.len(), tiles.as_mut_ptr(), &mut flags) };
         assert_eq!(status, WaStatus::Error);
+    }
+
+    fn wdt_bytes(wdt: &wow_alchemy_wdt::WdtFile) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        wow_alchemy_wdt::WdtWriter::new(std::io::Cursor::new(&mut bytes))
+            .write(wdt)
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn global_wmo_is_read_from_a_wmo_only_map() {
+        use wow_alchemy_wdt::chunks::{ModfChunk, ModfEntry, MwmoChunk};
+
+        let mut wdt = wow_alchemy_wdt::WdtFile::new(WowVersion::WotLK);
+        wdt.mphd.flags |= wow_alchemy_wdt::chunks::MphdFlags::WDT_USES_GLOBAL_MAP_OBJ;
+        let mut mwmo = MwmoChunk::new();
+        mwmo.add_filename(r"World\wmo\Dungeon\Test\Test.wmo".to_string());
+        wdt.mwmo = Some(mwmo);
+        let mut modf = ModfChunk::new();
+        let mut entry = ModfEntry::new();
+        entry.position = [17066.666, 10.0, 17000.0];
+        entry.rotation = [0.0, 90.0, 0.0];
+        entry.doodad_set = 2;
+        modf.add_entry(entry);
+        wdt.modf = Some(modf);
+        let bytes = wdt_bytes(&wdt);
+
+        let mut name = WaBuffer::EMPTY;
+        let mut placement = std::mem::MaybeUninit::<WaPlacement>::uninit();
+        let status = unsafe {
+            wa_wdt_global_wmo(
+                bytes.as_ptr(),
+                bytes.len(),
+                &mut name,
+                placement.as_mut_ptr(),
+            )
+        };
+
+        assert_eq!(status, WaStatus::Ok, "{:?}", unsafe {
+            std::ffi::CStr::from_ptr(wa_last_error())
+        });
+        let text = unsafe { std::slice::from_raw_parts(name.ptr, name.len) };
+        assert_eq!(text, br"World\wmo\Dungeon\Test\Test.wmo");
+        let placement = unsafe { placement.assume_init() };
+        assert_eq!(placement.position, [17066.666, 10.0, 17000.0]);
+        assert_eq!(placement.rotation[1], 90.0);
+        assert_eq!(placement.doodad_set, 2);
+        unsafe { crate::wa_buffer_free(name) };
+    }
+
+    #[test]
+    fn terrain_maps_have_no_global_wmo() {
+        let wdt = wow_alchemy_wdt::WdtFile::new(WowVersion::WotLK);
+        let bytes = wdt_bytes(&wdt);
+        let mut name = WaBuffer::EMPTY;
+        let mut placement = std::mem::MaybeUninit::<WaPlacement>::uninit();
+
+        let status = unsafe {
+            wa_wdt_global_wmo(
+                bytes.as_ptr(),
+                bytes.len(),
+                &mut name,
+                placement.as_mut_ptr(),
+            )
+        };
+
+        assert_eq!(status, WaStatus::NotFound);
+        assert!(name.ptr.is_null());
     }
 
     #[test]

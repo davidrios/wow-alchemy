@@ -17,6 +17,7 @@ typedef enum WaStatus {
 typedef struct WaMpqChain WaMpqChain;
 typedef struct WaDbc WaDbc;
 typedef struct WaAdt WaAdt;
+typedef struct WaPlacement WaPlacement;
 
 /* Bytes owned by the caller. Free with wa_buffer_free. */
 typedef struct WaBuffer {
@@ -75,6 +76,10 @@ WaStatus wa_dbc_get_string(const WaDbc *dbc, uint32_t record, uint32_t field, co
 /* The map's tiles: tiles must hold 4096 bytes, set to 1 where tile[y * 64 + x]
    exists. flags receives the MPHD flags, where 0x4 means big alpha maps. */
 WaStatus wa_wdt_read(const uint8_t *data, size_t len, uint8_t *tiles, uint32_t *flags);
+
+/* The WMO a map is made of when it has no terrain, as most instances are: its file name, as a
+   buffer to free with wa_buffer_free, and its placement, as an ADT's. WA_NOT_FOUND without one. */
+WaStatus wa_wdt_global_wmo(const uint8_t *data, size_t len, WaBuffer *name, WaPlacement *placement);
 
 /* One map chunk of a tile. Pointers are owned by the WaAdt. */
 typedef struct WaTerrainChunk {
