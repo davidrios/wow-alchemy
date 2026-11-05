@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{RwLock, RwLockReadGuard};
 
 use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image};
 use wow_alchemy_blp::load_blp_from_buf;
@@ -56,7 +56,8 @@ pub struct WaImage {
     pub mip_count: u32,
 }
 
-pub struct WaMpqChain(Mutex<PatchChain>);
+/// Reads share the lock, so threads read at once; only adding archives takes it alone.
+pub struct WaMpqChain(RwLock<PatchChain>);
 
 pub struct WaDbc(WdbFile);
 
@@ -101,11 +102,10 @@ unsafe fn bytes_arg<'a>(data: *const u8, len: usize) -> Result<&'a [u8], String>
     Ok(unsafe { std::slice::from_raw_parts(data, len) })
 }
 
-fn lock(chain: &WaMpqChain) -> Result<std::sync::MutexGuard<'_, PatchChain>, String> {
-    chain
-        .0
-        .lock()
-        .map_err(|_| "MPQ chain is unusable after an earlier panic".to_string())
+const POISONED: &str = "MPQ chain is unusable after an earlier panic";
+
+fn read(chain: &WaMpqChain) -> Result<RwLockReadGuard<'_, PatchChain>, String> {
+    chain.0.read().map_err(|_| POISONED.to_string())
 }
 
 #[unsafe(no_mangle)]
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn wa_buffer_free(buffer: WaBuffer) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wa_mpq_chain_new() -> *mut WaMpqChain {
-    Box::into_raw(Box::new(WaMpqChain(Mutex::new(PatchChain::new()))))
+    Box::into_raw(Box::new(WaMpqChain(RwLock::new(PatchChain::new()))))
 }
 
 #[unsafe(no_mangle)]
@@ -141,7 +141,10 @@ pub unsafe extern "C" fn wa_mpq_chain_add(
 ) -> WaStatus {
     guard(WaStatus::Error, || {
         let path = unsafe { utf8_arg(path) }?;
-        lock(unsafe { &*chain })?
+        unsafe { &*chain }
+            .0
+            .write()
+            .map_err(|_| POISONED.to_string())?
             .add_archive(path, priority)
             .map_err(|e| format!("{path}: {e}"))?;
         Ok(WaStatus::Ok)
@@ -155,7 +158,7 @@ pub unsafe extern "C" fn wa_mpq_chain_contains(
 ) -> i32 {
     guard(0, || {
         let file_name = unsafe { utf8_arg(file_name) }?;
-        Ok(lock(unsafe { &*chain })?.contains_file(file_name) as i32)
+        Ok(read(unsafe { &*chain })?.contains_file(file_name) as i32)
     })
 }
 
@@ -168,7 +171,7 @@ pub unsafe extern "C" fn wa_mpq_chain_read(
     guard(WaStatus::Error, || {
         unsafe { out.write(WaBuffer::EMPTY) };
         let file_name = unsafe { utf8_arg(file_name) }?;
-        match lock(unsafe { &*chain })?.read_file(file_name) {
+        match read(unsafe { &*chain })?.read_file(file_name) {
             Ok(data) => {
                 unsafe { out.write(WaBuffer::from_vec(data)) };
                 Ok(WaStatus::Ok)
@@ -183,7 +186,7 @@ pub unsafe extern "C" fn wa_mpq_chain_read(
 pub unsafe extern "C" fn wa_mpq_chain_list(chain: *mut WaMpqChain, out: *mut WaBuffer) -> WaStatus {
     guard(WaStatus::Error, || {
         unsafe { out.write(WaBuffer::EMPTY) };
-        let entries = lock(unsafe { &*chain })?
+        let entries = read(unsafe { &*chain })?
             .list()
             .map_err(|e| e.to_string())?;
         let names: Vec<_> = entries.into_iter().map(|entry| entry.name).collect();

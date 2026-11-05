@@ -145,13 +145,14 @@ impl PatchChain {
         self.top(name).map(|i| self.archives[i].archive.path())
     }
 
-    /// Reads a file from the highest-priority archive that has it, applying patches.
-    pub fn read_file(&mut self, name: &str) -> Result<Vec<u8>> {
+    /// Reads a file from the highest-priority archive that has it, applying patches. Takes
+    /// `&self`, so threads sharing the chain read at once.
+    pub fn read_file(&self, name: &str) -> Result<Vec<u8>> {
         let top = self
             .top(name)
             .ok_or_else(|| Error::FileNotFound(name.to_string()))?;
         let mut patches = Vec::new();
-        for entry in &mut self.archives[top..] {
+        for entry in &self.archives[top..] {
             let Some(info) = entry.archive.find_file(name) else {
                 continue;
             };
@@ -172,10 +173,10 @@ impl PatchChain {
     /// The files the archives' listfiles name, each spelling once, sorted, with the sizes
     /// and flags of the copy [`PatchChain::read_file`] reads. Files a higher archive deletes
     /// with a delete marker aren't listed. Archives whose listfile can't be read are skipped.
-    pub fn list(&mut self) -> Result<Vec<FileEntry>> {
+    pub fn list(&self) -> Result<Vec<FileEntry>> {
         let mut seen = HashSet::new();
         let mut names = Vec::new();
-        for entry in &mut self.archives {
+        for entry in &self.archives {
             match entry.archive.list_entries() {
                 Ok(files) => names.extend(
                     files

@@ -1,7 +1,7 @@
 //! Archives written by `ArchiveBuilder` read back through `Archive`.
 
 use wow_alchemy_mpq::compression::flags;
-use wow_alchemy_mpq::{Archive, ArchiveBuilder, BlockFlags, FileOptions, FormatVersion};
+use wow_alchemy_mpq::{Archive, ArchiveBuilder, BlockFlags, FileOptions, FormatVersion, PatchChain};
 
 fn sample(len: usize) -> Vec<u8> {
     (0..len)
@@ -82,7 +82,7 @@ fn every_version_reads_back() {
         FormatVersion::V4,
     ] {
         let (_dir, path) = build(version);
-        let mut archive = Archive::open(&path).unwrap();
+        let archive = Archive::open(&path).unwrap();
         assert_eq!(archive.format_version(), version);
         for (name, data, _) in files() {
             assert_eq!(archive.read_file(name).unwrap(), data, "{version:?} {name}");
@@ -136,4 +136,32 @@ fn v4_header_md5_covers_the_header() {
     let pos = archive.header().hash_table_pos() as usize;
     let hash: [u8; 16] = Md5::digest(&bytes[pos..pos + v4.hash_table_size_64 as usize]).into();
     assert_eq!(v4.md5_hash_table, hash);
+}
+
+#[test]
+fn threads_read_one_chain_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shared.mpq");
+    let files: Vec<(String, Vec<u8>)> = (0..64)
+        .map(|i| (format!(r"dir\file{i}.bin"), vec![i as u8; 1000 + i * 997]))
+        .collect();
+    let mut builder = ArchiveBuilder::new();
+    for (name, data) in &files {
+        builder = builder.add_file_data(data.clone(), name);
+    }
+    builder.build(&path).unwrap();
+
+    let mut chain = PatchChain::new();
+    chain.add_archive(&path, 0).unwrap();
+    std::thread::scope(|scope| {
+        for thread in 0..8 {
+            let (chain, files) = (&chain, &files);
+            scope.spawn(move || {
+                for round in 0..20 {
+                    let (name, data) = &files[(thread * 7 + round * 13) % files.len()];
+                    assert_eq!(&chain.read_file(name).unwrap(), data, "{name}");
+                }
+            });
+        }
+    });
 }

@@ -1,7 +1,7 @@
 //! Reading an MPQ archive.
 
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 
 use wow_alchemy_data::prelude::*;
@@ -49,11 +49,12 @@ pub struct FileEntry {
     pub flags: BlockFlags,
 }
 
-/// An open MPQ archive.
+/// An open MPQ archive. Reading takes `&self`: data is read at its position in the file, so
+/// any number of threads can read one archive at once.
 #[derive(Debug)]
 pub struct Archive {
     path: PathBuf,
-    reader: BufReader<File>,
+    file: File,
     location: HeaderLocation,
     hash_table: Option<HashTable>,
     block_table: Option<BlockTable>,
@@ -66,11 +67,12 @@ impl Archive {
     /// Opens an archive and loads its tables.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let mut reader = BufReader::new(File::open(&path)?);
+        let file = File::open(&path)?;
+        let mut reader = BufReader::new(file.try_clone()?);
         let location = find_header(&mut reader)?;
         let mut archive = Self {
             path,
-            reader,
+            file,
             location,
             hash_table: None,
             block_table: None,
@@ -78,11 +80,11 @@ impl Archive {
             het_table: None,
             bet_table: None,
         };
-        archive.load_tables()?;
+        archive.load_tables(&mut reader)?;
         Ok(archive)
     }
 
-    fn load_tables(&mut self) -> Result<()> {
+    fn load_tables(&mut self, reader: &mut BufReader<File>) -> Result<()> {
         let offset = self.location.archive_offset;
         let header = self.location.header.clone();
         let v4 = header.v4().cloned();
@@ -93,7 +95,7 @@ impl Archive {
         if hash_count > 0 {
             let size = hash_count * HashEntry::SIZE;
             let data = read_table(
-                &mut self.reader,
+                reader,
                 offset + header.hash_table_pos(),
                 stored(v4.as_ref().map(|v| v.hash_table_size_64), size),
                 size,
@@ -107,7 +109,7 @@ impl Archive {
         if block_count > 0 {
             let size = block_count * BlockEntry::SIZE;
             let data = read_table(
-                &mut self.reader,
+                reader,
                 offset + header.block_table_pos(),
                 stored(v4.as_ref().map(|v| v.block_table_size_64), size),
                 size,
@@ -119,7 +121,7 @@ impl Archive {
             if let Some(pos) = header.hi_block_table_pos() {
                 let size = block_count * 2;
                 let data = read_table(
-                    &mut self.reader,
+                    reader,
                     offset + pos,
                     stored(v4.as_ref().map(|v| v.hi_block_table_size_64), size),
                     size,
@@ -133,7 +135,7 @@ impl Archive {
         if let Some(pos) = header.het_table_pos() {
             let size = self.ext_table_size(pos, v4.as_ref().map(|v| v.het_table_size_64));
             match read_ext_table(
-                &mut self.reader,
+                reader,
                 offset + pos,
                 size,
                 HET_MAGIC,
@@ -148,7 +150,7 @@ impl Archive {
         if let Some(pos) = header.bet_table_pos() {
             let size = self.ext_table_size(pos, v4.as_ref().map(|v| v.bet_table_size_64));
             match read_ext_table(
-                &mut self.reader,
+                reader,
                 offset + pos,
                 size,
                 BET_MAGIC,
@@ -285,7 +287,7 @@ impl Archive {
 
     /// Reads a file. Patch files can't be read alone; see [`Archive::read_patch`] and
     /// [`crate::PatchChain`].
-    pub fn read_file(&mut self, name: &str) -> Result<Vec<u8>> {
+    pub fn read_file(&self, name: &str) -> Result<Vec<u8>> {
         let info = self
             .find_file(name)
             .filter(|info| !info.flags.contains(BlockFlags::DELETE_MARKER))
@@ -299,7 +301,7 @@ impl Archive {
     }
 
     /// Reads a patch file.
-    pub fn read_patch(&mut self, name: &str) -> Result<PatchFile> {
+    pub fn read_patch(&self, name: &str) -> Result<PatchFile> {
         let info = self
             .find_file(name)
             .ok_or_else(|| Error::FileNotFound(name.to_string()))?;
@@ -310,7 +312,38 @@ impl Archive {
     }
 
     /// Reads a file's data, decrypting and decompressing it.
-    fn read_data(&mut self, name: &str, info: &FileInfo) -> Result<Vec<u8>> {
+    /// Reads `buf.len()` bytes at `pos` in the file, without moving a shared cursor.
+    fn read_at(&self, pos: u64, buf: &mut [u8]) -> Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileExt;
+            self.file.read_exact_at(buf, pos)?;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::FileExt;
+            let mut done = 0;
+            while done < buf.len() {
+                match self.file.seek_read(&mut buf[done..], pos + done as u64) {
+                    Ok(0) => {
+                        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+                    }
+                    Ok(n) => done += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn read_vec_at(&self, pos: u64, len: usize) -> Result<Vec<u8>> {
+        let mut data = vec![0u8; len];
+        self.read_at(pos, &mut data)?;
+        Ok(data)
+    }
+
+    fn read_data(&self, name: &str, info: &FileInfo) -> Result<Vec<u8>> {
         let key = if info.flags.contains(BlockFlags::ENCRYPTED) {
             crypto::file_key(
                 name,
@@ -326,17 +359,15 @@ impl Archive {
         let mut stored_size = info.compressed_size;
         let mut size = info.file_size;
         if info.flags.contains(BlockFlags::PATCH_FILE) {
-            self.reader.seek(SeekFrom::Start(start))?;
-            let patch_info: PatchInfo = self.reader.wow_read()?;
+            let bytes = self.read_vec_at(start, (PatchInfo::SIZE as usize).min(stored_size as usize))?;
+            let patch_info: PatchInfo = Cursor::new(bytes).wow_read()?;
             start += patch_info.length as u64;
             stored_size = stored_size.saturating_sub(patch_info.length as u64);
             size = patch_info.data_size as u64;
         }
 
         if info.flags.contains(BlockFlags::SINGLE_UNIT) {
-            let mut data = vec![0u8; stored_size as usize];
-            self.reader.seek(SeekFrom::Start(start))?;
-            self.reader.read_exact(&mut data)?;
+            let mut data = self.read_vec_at(start, stored_size as usize)?;
             crypto::decrypt_bytes(&mut data, key);
             return if info.flags.is_compressed() {
                 decompress_block(&data, size as usize, info.flags)
@@ -367,9 +398,7 @@ impl Archive {
                 "{name}: sectors end at {end}, before their start {first}"
             )));
         }
-        let mut raw = vec![0u8; end - first];
-        self.reader.seek(SeekFrom::Start(start + first as u64))?;
-        self.reader.read_exact(&mut raw)?;
+        let raw = self.read_vec_at(start + first as u64, end - first)?;
         for i in 0..sector_count {
             let (from, to) = (offsets[i] as usize, offsets[i + 1] as usize);
             if to < from || from < first || to > end {
@@ -394,14 +423,12 @@ impl Archive {
     /// The offsets of a compressed file's sectors from its start, one more than there are
     /// sectors; encrypted with the file's key minus one.
     fn read_sector_offsets(
-        &mut self,
+        &self,
         start: u64,
         sector_count: usize,
         key: u32,
     ) -> Result<Vec<u32>> {
-        let mut bytes = vec![0u8; (sector_count + 1) * 4];
-        self.reader.seek(SeekFrom::Start(start))?;
-        self.reader.read_exact(&mut bytes)?;
+        let mut bytes = self.read_vec_at(start, (sector_count + 1) * 4)?;
         if key != 0 {
             crypto::decrypt_bytes(&mut bytes, key.wrapping_sub(1));
         }
@@ -415,14 +442,14 @@ impl Archive {
 
     /// The files the archive's `(listfile)` names that are in the archive, in its order.
     /// An archive without a listfile lists nothing, and delete markers aren't listed.
-    pub fn list(&mut self) -> Result<Vec<FileEntry>> {
+    pub fn list(&self) -> Result<Vec<FileEntry>> {
         let mut entries = self.list_entries()?;
         entries.retain(|e| !e.flags.contains(BlockFlags::DELETE_MARKER));
         Ok(entries)
     }
 
     /// The entries the `(listfile)` names, delete markers included.
-    pub(crate) fn list_entries(&mut self) -> Result<Vec<FileEntry>> {
+    pub(crate) fn list_entries(&self) -> Result<Vec<FileEntry>> {
         if !self.contains_file(LISTFILE) {
             return Ok(Vec::new());
         }
@@ -442,7 +469,7 @@ impl Archive {
     }
 
     /// The archive's `(attributes)`, if it has one.
-    pub fn attributes(&mut self) -> Result<Option<Attributes>> {
+    pub fn attributes(&self) -> Result<Option<Attributes>> {
         if !self.contains_file(ATTRIBUTES) {
             return Ok(None);
         }
@@ -461,7 +488,6 @@ impl Archive {
     }
 }
 
-/// Decompresses a single unit or sector by its block's compression.
 /// Decompresses a single unit or sector by its block's compression, into `size` bytes
 /// (padding with zeros a short result, as Storm does).
 fn decompress_block(data: &[u8], size: usize, flags: BlockFlags) -> Result<Vec<u8>> {

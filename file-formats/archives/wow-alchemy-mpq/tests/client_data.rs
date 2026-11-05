@@ -41,7 +41,7 @@ fn read_at(path: &Path, offset: u64, len: usize) -> Vec<u8> {
 
 fn read_through_chain(step: usize) {
     let Some(client) = client() else { return };
-    let mut chain = PatchChain::open_wotlk_client(&client, "enUS").unwrap();
+    let chain = PatchChain::open_wotlk_client(&client, "enUS").unwrap();
     let names = chain.list().unwrap();
     assert!(names.len() > 100_000, "only {} files listed", names.len());
     let mut bytes = 0usize;
@@ -77,7 +77,7 @@ fn each_archive_reserializes_its_header_and_tables() {
     let Some(client) = client() else { return };
     for path in archives(&client) {
         let shown = path.display();
-        let mut archive = Archive::open(&path).unwrap_or_else(|e| panic!("{shown}: {e}"));
+        let archive = Archive::open(&path).unwrap_or_else(|e| panic!("{shown}: {e}"));
         let offset = archive.archive_offset();
         let header = archive.header().clone();
 
