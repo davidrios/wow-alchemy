@@ -12,7 +12,7 @@ use crate::file::{BlpData, BlpFormat, BlpImage};
 use crate::header::*;
 use ::image::DynamicImage;
 pub use ::image::imageops::FilterType;
-pub use bc1::{bc1_mipmaps_size, blp_to_bc1_mipmaps};
+pub use bc1::{bc1_mipmaps_size, blp_to_bc1_mipmaps, rgba_to_bc1_mipmaps};
 use dxtn::*;
 pub use error::Error;
 use jpeg::*;

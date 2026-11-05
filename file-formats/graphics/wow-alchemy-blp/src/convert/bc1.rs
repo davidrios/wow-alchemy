@@ -95,7 +95,29 @@ fn bc3_block_to_bc1(block: &[u8]) -> [u8; BC1_BLOCK_BYTES] {
 
 fn encode_mipmaps(image: &BlpImage, size: u32) -> Result<Vec<u8>, Error> {
     let source = blp_to_image(image, 0)?.into_rgba8();
-    let mut level = imageops::resize(&source, size, size, FilterType::Triangle);
+    encode_image(&source, size)
+}
+
+/// Converts RGBA pixels of any size, 4 bytes each, row by row, such as an image
+/// read from a PNG, to a BC1 mipmap chain, as [`blp_to_bc1_mipmaps`] does for a
+/// texture it must decode. `size` is the width and height of the first level,
+/// and must be a power of two. `None` when the pixels don't fill the image.
+pub fn rgba_to_bc1_mipmaps(pixels: &[u8], width: u32, height: u32, size: u32) -> Result<Option<Vec<u8>>, Error> {
+    if !size.is_power_of_two() {
+        return Err(Error::InvalidBc1Size(size));
+    }
+
+    let expected = (width as usize) * (height as usize) * 4;
+    if width == 0 || height == 0 || pixels.len() != expected {
+        return Ok(None);
+    }
+
+    let source = RgbaImage::from_raw(width, height, pixels.to_vec());
+    source.map(|image| encode_image(&image, size)).transpose()
+}
+
+fn encode_image(source: &RgbaImage, size: u32) -> Result<Vec<u8>, Error> {
+    let mut level = imageops::resize(source, size, size, FilterType::Triangle);
     let mut output = Vec::with_capacity(bc1_mipmaps_size(size));
 
     loop {
@@ -150,6 +172,15 @@ mod tests {
             FilterType::Triangle,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn rgba_images_of_any_size_make_a_full_chain() {
+        let pixels = RgbaImage::from_fn(300, 200, |x, y| ::image::Rgba([x as u8, y as u8, 0, 255]));
+        let mipmaps = rgba_to_bc1_mipmaps(pixels.as_raw(), 300, 200, 64).unwrap().unwrap();
+        assert_eq!(mipmaps.len(), bc1_mipmaps_size(64));
+        assert!(rgba_to_bc1_mipmaps(pixels.as_raw(), 300, 200, 48).is_err());
+        assert!(rgba_to_bc1_mipmaps(pixels.as_raw(), 300, 201, 64).unwrap().is_none());
     }
 
     fn dxt5() -> Blp2Format {

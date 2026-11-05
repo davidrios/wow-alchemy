@@ -10,7 +10,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::{RwLock, RwLockReadGuard};
 
-use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image};
+use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image, rgba_to_bc1_mipmaps};
 use wow_alchemy_blp::load_blp_from_buf;
 use wow_alchemy_cdbc::WdbFile;
 use wow_alchemy_mpq::PatchChain;
@@ -265,6 +265,28 @@ pub unsafe extern "C" fn wa_blp_to_bc1(
         let bytes = unsafe { bytes_arg(data, len) }?;
         let blp = load_blp_from_buf(bytes).map_err(|e| e.to_string())?;
         let mipmaps = blp_to_bc1_mipmaps(&blp, size).map_err(|e| e.to_string())?;
+        unsafe { out.write(WaBuffer::from_vec(mipmaps)) };
+        Ok(WaStatus::Ok)
+    })
+}
+
+/// Converts `width` x `height` RGBA pixels, 4 bytes each, row by row, to a BC1
+/// mipmap chain whose first level is `size` square, as `wa_blp_to_bc1` does.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_rgba_to_bc1(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    size: u32,
+    out: *mut WaBuffer,
+) -> WaStatus {
+    guard(WaStatus::Error, || {
+        unsafe { out.write(WaBuffer::EMPTY) };
+        let length = (width as usize) * (height as usize) * 4;
+        let bytes = unsafe { bytes_arg(pixels, length) }?;
+        let mipmaps = rgba_to_bc1_mipmaps(bytes, width, height, size)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "pixels don't fill the image".to_string())?;
         unsafe { out.write(WaBuffer::from_vec(mipmaps)) };
         Ok(WaStatus::Ok)
     })
