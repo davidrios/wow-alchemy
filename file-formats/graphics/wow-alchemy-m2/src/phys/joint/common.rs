@@ -1,4 +1,3 @@
-use wow_alchemy_data::prelude::*;
 use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 
 #[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]

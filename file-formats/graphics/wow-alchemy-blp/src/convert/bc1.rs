@@ -1,6 +1,6 @@
 use super::blp_to_image;
 use super::error::Error;
-use crate::types::*;
+use crate::file::{BlpFormat, BlpImage};
 use ::image::{RgbaImage, imageops, imageops::FilterType};
 
 const BC1_BLOCK_BYTES: usize = 8;
@@ -37,9 +37,9 @@ pub fn blp_to_bc1_mipmaps(image: &BlpImage, size: u32) -> Result<Vec<u8>, Error>
 
 /// Reuses the texture's own compressed mipmaps, if it has the whole chain.
 fn existing_mipmaps(image: &BlpImage, size: u32) -> Option<Vec<u8>> {
-    let (images, block_bytes) = match &image.content {
-        BlpContent::Dxt1(content) => (&content.images, BC1_BLOCK_BYTES),
-        BlpContent::Dxt3(content) | BlpContent::Dxt5(content) => (&content.images, BC3_BLOCK_BYTES),
+    let block_bytes = match image.format().ok()? {
+        BlpFormat::Dxt1 => BC1_BLOCK_BYTES,
+        BlpFormat::Dxt3 | BlpFormat::Dxt5 => BC3_BLOCK_BYTES,
         _ => return None,
     };
 
@@ -54,9 +54,9 @@ fn existing_mipmaps(image: &BlpImage, size: u32) -> Option<Vec<u8>> {
 
     for level in 0..levels {
         let blocks = blocks_in_level(size >> level);
-        let data = images
+        let data = image
+            .mipmaps
             .get(first + level)?
-            .content
             .get(..blocks * block_bytes)?;
 
         if block_bytes == BC1_BLOCK_BYTES {

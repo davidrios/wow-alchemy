@@ -5,171 +5,30 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# wow-mpq 0.7 declared 1.92, newer than the rest of the workspace.
-rust-version = "1.92"
+rust-version.workspace = true
 homepage.workspace = true
 readme = "README.md"
-description = "High-performance parser for World of Warcraft MPQ archives with parallel processing support"
+description = "Reader and writer for World of Warcraft MPQ archives"
 categories = ["game-development", "parser-implementations"]
 keywords = ["wow", "warcraft", "mpq", "archive", "gamedev"]
 
 [dependencies]
-# Error handling
+wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
+wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
+bitflags = { workspace = true }
 thiserror = { workspace = true }
-
-# Logging
 log = { workspace = true }
 
-# Hashing and cryptography
-sha1 = "0.10"
+# Checksums: (attributes), v4 table MD5s, patch verification and sector CRCs
 md-5 = "0.10"
 crc32fast = "1.4"
 adler2 = "2.0"
-rsa = "0.9"
-num-bigint = "0.4"
-num-traits = "0.2"
 
-# Compression algorithms
+# Compression codecs used by MPQ archives
 flate2 = "1.1"
 bzip2 = "0.6"
 lzma-rs = "0.3"
 pklib = "0.1"
-implode = "0.1.1"
-
-# Data structures and utilities
-bytes = "1.10"
-byteorder = "1.5"
-rand = { workspace = true }
-tempfile = { workspace = true }
-
-# Parallel processing
-rayon = "1.10"
-
-# Thread-safe data structures and caching
-parking_lot = "0.12"
-lru = "0.18"
-
-
-# Async I/O support (optional)
-tokio = { version = "1.0", features = [
-  "io-util",
-  "time",
-  "sync",
-  "rt",
-  "fs",
-  "macros",
-], optional = true }
-
-# Memory-mapped files (optional)
-memmap2 = { version = "0.9", optional = true }
-hex = "0.4.3"
-
-# Unix system calls for memory mapping optimizations (optional, Unix only)
-[target.'cfg(unix)'.dependencies]
-libc = { version = "0.2", optional = true }
-
 
 [dev-dependencies]
-criterion = { workspace = true }
-env_logger = { workspace = true }
-pretty_assertions = { workspace = true }
-proptest = { workspace = true }
 tempfile = { workspace = true }
-assert_cmd = { workspace = true }
-predicates = { workspace = true }
-
-[[bench]]
-name = "hash"
-harness = false
-
-[[bench]]
-name = "crypto"
-harness = false
-
-[[bench]]
-name = "compression"
-harness = false
-
-[[bench]]
-name = "builder"
-harness = false
-
-[[bench]]
-name = "archive_creation"
-harness = false
-
-[[bench]]
-name = "archive_extraction"
-harness = false
-
-[[bench]]
-name = "parallel_processing"
-harness = false
-
-[[bench]]
-name = "single_archive_parallel"
-harness = false
-
-# SIMD benchmark (only available with simd feature)
-[[bench]]
-name = "simd_performance"
-harness = false
-required-features = ["simd"]
-
-[features]
-default = []
-
-# Optional async I/O support with resource protection
-async = ["tokio"]
-
-# Memory-mapped file support for high-performance access
-mmap = ["memmap2", "libc"]
-
-# SIMD-accelerated operations for maximum performance
-simd = []
-
-# Utilities for testing and examples with WoW game data
-test-utils = []
-
-# Enable all features for docs.rs
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
-[[example]]
-name = "analyze_attributes"
-
-[[example]]
-name = "bulk_modify"
-
-[[example]]
-name = "compare_archives"
-
-[[example]]
-name = "create_archive"
-
-
-[[example]]
-name = "list_archive_contents"
-
-[[example]]
-name = "list_with_names"
-
-[[example]]
-name = "modify_archive"
-
-
-[[example]]
-name = "simple_list"
-
-[[example]]
-name = "single_archive_parallel_demo"
-
-[[example]]
-name = "verify_wow_files"
-required-features = ["test-utils"]
-
-# SIMD performance demonstration
-[[example]]
-name = "simd_demo"
-required-features = ["simd"]

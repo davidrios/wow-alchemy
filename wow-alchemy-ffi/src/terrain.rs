@@ -4,17 +4,15 @@ use std::io::Cursor;
 use std::ptr;
 
 use wow_alchemy_adt::{
-    ALPHA_MAP_BYTES, Adt, AlphaMapFormat, LiquidLayer, MCLY_USE_ALPHA_MAP, McnkChunk,
-    decode_alpha_map, read_liquid_layers,
+    ALPHA_MAP_BYTES, Adt, CHUNKS_PER_TILE, LiquidLayer, McnkChunk, VERTICES_PER_CHUNK,
 };
-use wow_alchemy_wdt::WdtReader;
-use wow_alchemy_wdt::version::WowVersion;
+use wow_alchemy_data::types::WowStructR;
+use wow_alchemy_data::world::MapObjectPlacement;
+use wow_alchemy_wdt::WdtFile;
 
 use crate::{WaBuffer, WaStatus, bytes_arg, guard};
 
-const CHUNKS_PER_TILE: usize = 256;
 const TILES_PER_MAP: usize = 64 * 64;
-const VERTICES_PER_CHUNK: usize = 145;
 const MAX_LAYERS: usize = 4;
 
 #[repr(C)]
@@ -103,30 +101,14 @@ pub struct WaAdt {
     wmo_placements: Vec<WaPlacement>,
 }
 
-/// Placements name a slot in MMID or MWID, which holds a string's offset. The
-/// parser lists the strings in order, so this finds the slot's string by counting
-/// the offsets, which works unless a file's offsets skip strings.
-fn name_for_slot(names: &[String], offsets: &[u32], slot: u32) -> u32 {
-    let Some(&wanted) = offsets.get(slot as usize) else {
-        return slot;
-    };
-    let mut offset = 0u32;
-    for (index, name) in names.iter().enumerate() {
-        if offset == wanted {
-            return index as u32;
-        }
-        offset += name.len() as u32 + 1;
-    }
-    slot
-}
-
 fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String> {
-    let location = format!("chunk ({}, {})", chunk.ix, chunk.iy);
+    let header = &chunk.header;
+    let location = format!("chunk ({}, {})", header.index_x, header.index_y);
 
-    if chunk.height_map.len() != VERTICES_PER_CHUNK || chunk.normals.len() != VERTICES_PER_CHUNK {
+    if chunk.heights.len() != VERTICES_PER_CHUNK || chunk.normals.len() != VERTICES_PER_CHUNK {
         return Err(format!(
             "{location} has {} heights and {} normals, expected {VERTICES_PER_CHUNK}",
-            chunk.height_map.len(),
+            chunk.heights.len(),
             chunk.normals.len()
         ));
     }
@@ -135,47 +117,37 @@ fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String
     let mut layer_flags = [0; MAX_LAYERS];
     let mut effect_ids = [0; MAX_LAYERS];
     let mut alpha = vec![0; (MAX_LAYERS - 1) * ALPHA_MAP_BYTES];
-    let layers = &chunk.texture_layers[..chunk.texture_layers.len().min(MAX_LAYERS)];
+    let layers = &chunk.layers[..chunk.layers.len().min(MAX_LAYERS)];
 
     for (index, layer) in layers.iter().enumerate() {
         texture_ids[index] = layer.texture_id;
-        layer_flags[index] = layer.flags;
+        layer_flags[index] = layer.flags.bits();
         effect_ids[index] = layer.effect_id;
-        if index == 0 || layer.flags & MCLY_USE_ALPHA_MAP == 0 {
-            continue;
+        let map = chunk
+            .alpha_map(index, big_alpha)
+            .map_err(|e| format!("{location} layer {index}: {e}"))?;
+        if let Some(map) = map {
+            alpha[(index - 1) * ALPHA_MAP_BYTES..index * ALPHA_MAP_BYTES].copy_from_slice(&map);
         }
-
-        let data = chunk
-            .raw_alpha
-            .get(layer.alpha_map_offset as usize..)
-            .ok_or_else(|| format!("{location} layer {index} has a bad alpha offset"))?;
-        let format = AlphaMapFormat::new(big_alpha, layer.flags, chunk.flags);
-        let map =
-            decode_alpha_map(data, format).map_err(|e| format!("{location} layer {index}: {e}"))?;
-        alpha[(index - 1) * ALPHA_MAP_BYTES..index * ALPHA_MAP_BYTES].copy_from_slice(&map);
     }
 
     // Chunks without MCCV get the neutral color.
-    let vertex_colors = if chunk.raw_vertex_colors.len() == VERTICES_PER_CHUNK * 4 {
-        chunk.raw_vertex_colors.clone()
-    } else {
-        vec![127; VERTICES_PER_CHUNK * 4]
+    let vertex_colors = match &chunk.vertex_colors {
+        Some(colors) if colors.len() == VERTICES_PER_CHUNK => colors.concat(),
+        _ => vec![127; VERTICES_PER_CHUNK * 4],
     };
 
     Ok(StoredChunk {
-        ix: chunk.ix,
-        iy: chunk.iy,
-        flags: chunk.flags,
-        area_id: chunk.area_id,
-        // Only the low 16 bits hold the hole mask.
-        holes: chunk.holes & 0xFFFF,
-        // The parser reads these 8 bytes of the header as two u32s.
-        no_effect_doodad: u64::from(chunk.pred_tex) | (u64::from(chunk.n_effect_doodad) << 32),
-        // McnkChunk orders this [file 1, file 2, file 0], and the file stores
-        // north, west, height.
-        position: [chunk.position[2], chunk.position[0], chunk.position[1]],
-        heights: chunk.height_map.clone(),
-        normals: chunk.normals.iter().flatten().map(|b| *b as i8).collect(),
+        ix: header.index_x,
+        iy: header.index_y,
+        flags: header.flags.bits(),
+        area_id: header.area_id,
+        holes: header.holes_low_res as u32,
+        no_effect_doodad: header.no_effect_doodad,
+        // The file stores north, west, height.
+        position: [header.position.x, header.position.y, header.position.z],
+        heights: chunk.heights.clone(),
+        normals: chunk.normals.iter().flatten().copied().collect(),
         layer_count: layers.len() as u32,
         texture_ids,
         layer_flags,
@@ -183,6 +155,32 @@ fn store_chunk(chunk: &McnkChunk, big_alpha: bool) -> Result<StoredChunk, String
         alpha,
         vertex_colors,
     })
+}
+
+fn read_wdt(bytes: &[u8]) -> Result<WdtFile, String> {
+    WdtFile::wow_read(&mut Cursor::new(bytes)).map_err(|e| e.to_string())
+}
+
+/// A WMO's placement as the C ABI has it, from MODF.
+pub(crate) fn wmo_placement(entry: &MapObjectPlacement) -> WaPlacement {
+    WaPlacement {
+        name: entry.name_id,
+        unique_id: entry.unique_id,
+        position: [entry.position.x, entry.position.y, entry.position.z],
+        rotation: [entry.rotation.x, entry.rotation.y, entry.rotation.z],
+        scale: 1.0,
+        doodad_set: entry.doodad_set as u32,
+        bounds_min: [
+            entry.extents.min.x,
+            entry.extents.min.y,
+            entry.extents.min.z,
+        ],
+        bounds_max: [
+            entry.extents.max.x,
+            entry.extents.max.y,
+            entry.extents.max.z,
+        ],
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -193,18 +191,12 @@ pub unsafe extern "C" fn wa_wdt_read(
     flags: *mut u32,
 ) -> WaStatus {
     guard(WaStatus::Error, || {
-        let bytes = unsafe { bytes_arg(data, len) }?;
-        let wdt = WdtReader::new(Cursor::new(bytes), WowVersion::WotLK)
-            .read()
-            .map_err(|e| e.to_string())?;
-
+        let wdt = read_wdt(unsafe { bytes_arg(data, len) }?)?;
         let output = unsafe { std::slice::from_raw_parts_mut(tiles, TILES_PER_MAP) };
-        for (index, slot) in output.iter_mut().enumerate() {
-            let tile = wdt.get_tile(index % 64, index / 64);
-            *slot = tile.is_some_and(|t| t.has_adt) as u8;
+        for (slot, tile) in output.iter_mut().zip(&wdt.tiles) {
+            *slot = tile.has_adt() as u8;
         }
-
-        unsafe { flags.write(wdt.mphd.flags.bits()) };
+        unsafe { flags.write(wdt.header.flags.bits()) };
         Ok(WaStatus::Ok)
     })
 }
@@ -221,28 +213,15 @@ pub unsafe extern "C" fn wa_wdt_global_wmo(
 ) -> WaStatus {
     guard(WaStatus::Error, || {
         unsafe { name.write(WaBuffer::EMPTY) };
-        let bytes = unsafe { bytes_arg(data, len) }?;
-        let wdt = WdtReader::new(Cursor::new(bytes), WowVersion::WotLK)
-            .read()
-            .map_err(|e| e.to_string())?;
-
-        let file = wdt.mwmo.as_ref().and_then(|c| c.filenames.first());
-        let entry = wdt.modf.as_ref().and_then(|c| c.entries.first());
-        let (Some(file), Some(entry)) = (file, entry) else {
+        let wdt = read_wdt(unsafe { bytes_arg(data, len) }?)?;
+        let Some((file, entry)) = wdt.global_wmo() else {
             return Ok(WaStatus::NotFound);
         };
-
         unsafe {
-            name.write(WaBuffer::from_vec(file.clone().into_bytes()));
+            name.write(WaBuffer::from_vec(file.into_bytes()));
             placement.write(WaPlacement {
                 name: 0,
-                unique_id: entry.unique_id,
-                position: entry.position,
-                rotation: entry.rotation,
-                scale: 1.0,
-                doodad_set: entry.doodad_set as u32,
-                bounds_min: entry.lower_bounds,
-                bounds_max: entry.upper_bounds,
+                ..wmo_placement(entry)
             })
         };
         Ok(WaStatus::Ok)
@@ -253,11 +232,11 @@ pub unsafe extern "C" fn wa_wdt_global_wmo(
 pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32) -> *mut WaAdt {
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
-        let adt = Adt::from_reader(Cursor::new(bytes)).map_err(|e| e.to_string())?;
-        let liquids = read_liquid_layers(bytes).map_err(|e| e.to_string())?;
+        let adt = Adt::wow_read(&mut Cursor::new(bytes)).map_err(|e| e.to_string())?;
+        let liquids = adt.liquid_layers().map_err(|e| e.to_string())?;
 
         let mut chunks = adt
-            .mcnk_chunks
+            .chunks
             .iter()
             .map(|chunk| store_chunk(chunk, big_alpha != 0))
             .collect::<Result<Vec<_>, _>>()?;
@@ -269,45 +248,34 @@ pub unsafe extern "C" fn wa_adt_open(data: *const u8, len: usize, big_alpha: i32
         }
         chunks.sort_by_key(|chunk| (chunk.iy, chunk.ix));
 
-        let models = adt.mmdx.map(|c| c.filenames).unwrap_or_default();
-        let wmos = adt.mwmo.map(|c| c.filenames).unwrap_or_default();
-        let model_slots = adt.mmid.map(|c| c.offsets).unwrap_or_default();
-        let wmo_slots = adt.mwid.map(|c| c.offsets).unwrap_or_default();
-
+        // Placements name a slot in MMID or MWID, which holds a name's offset; one that names
+        // none keeps its slot.
         let doodads = adt
-            .mddf
-            .map(|c| c.doodads)
-            .unwrap_or_default()
+            .doodads
             .iter()
             .map(|d| WaPlacement {
-                name: name_for_slot(&models, &model_slots, d.name_id),
+                name: adt.model_index(d.name_id).map_or(d.name_id, |i| i as u32),
                 unique_id: d.unique_id,
-                position: d.position,
-                rotation: d.rotation,
-                scale: d.scale,
+                position: [d.position.x, d.position.y, d.position.z],
+                rotation: [d.rotation.x, d.rotation.y, d.rotation.z],
+                scale: d.scale_factor(),
                 doodad_set: 0,
                 bounds_min: [0.0; 3],
                 bounds_max: [0.0; 3],
             })
             .collect();
         let wmo_placements = adt
-            .modf
-            .map(|c| c.models)
-            .unwrap_or_default()
+            .wmo_placements
             .iter()
             .map(|m| WaPlacement {
-                name: name_for_slot(&wmos, &wmo_slots, m.name_id),
-                unique_id: m.unique_id,
-                position: m.position,
-                rotation: m.rotation,
-                scale: 1.0,
-                doodad_set: m.doodad_set as u32,
-                bounds_min: m.bounds_min,
-                bounds_max: m.bounds_max,
+                name: adt.wmo_index(m.name_id).map_or(m.name_id, |i| i as u32),
+                ..wmo_placement(m)
             })
             .collect();
 
-        let textures = adt.mtex.map(|mtex| mtex.filenames).unwrap_or_default();
+        let models = adt.models.names();
+        let wmos = adt.wmos.names();
+        let textures = adt.textures.names();
         Ok(Box::into_raw(Box::new(WaAdt {
             liquids,
             textures,
@@ -478,6 +446,7 @@ unsafe fn write_name(name: Option<&String>, out: *mut *const u8, out_len: *mut u
 mod tests {
     use super::*;
     use crate::wa_last_error;
+    use wow_alchemy_data::types::WowStructW;
 
     #[test]
     fn invalid_files_report_errors() {
@@ -494,30 +463,25 @@ mod tests {
         assert_eq!(status, WaStatus::Error);
     }
 
-    fn wdt_bytes(wdt: &wow_alchemy_wdt::WdtFile) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        wow_alchemy_wdt::WdtWriter::new(std::io::Cursor::new(&mut bytes))
-            .write(wdt)
-            .unwrap();
-        bytes
+    fn wdt_bytes(wdt: &WdtFile) -> Vec<u8> {
+        let mut bytes = Cursor::new(Vec::new());
+        wdt.wow_write(&mut bytes).unwrap();
+        bytes.into_inner()
     }
 
     #[test]
     fn global_wmo_is_read_from_a_wmo_only_map() {
-        use wow_alchemy_wdt::chunks::{ModfChunk, ModfEntry, MwmoChunk};
+        use wow_alchemy_data::types::{C3Vector, StringBlock};
 
-        let mut wdt = wow_alchemy_wdt::WdtFile::new(WowVersion::WotLK);
-        wdt.mphd.flags |= wow_alchemy_wdt::chunks::MphdFlags::WDT_USES_GLOBAL_MAP_OBJ;
-        let mut mwmo = MwmoChunk::new();
-        mwmo.add_filename(r"World\wmo\Dungeon\Test\Test.wmo".to_string());
-        wdt.mwmo = Some(mwmo);
-        let mut modf = ModfChunk::new();
-        let mut entry = ModfEntry::new();
-        entry.position = [17066.666, 10.0, 17000.0];
-        entry.rotation = [0.0, 90.0, 0.0];
-        entry.doodad_set = 2;
-        modf.add_entry(entry);
-        wdt.modf = Some(modf);
+        let mut wdt = WdtFile::default();
+        wdt.header.flags |= wow_alchemy_wdt::MphdFlags::WDT_USES_GLOBAL_MAP_OBJ;
+        wdt.wmo_names = Some(StringBlock::from_strings(&[r"World\wmo\Dungeon\Test\Test.wmo"]).0);
+        wdt.wmo_placements = Some(vec![MapObjectPlacement {
+            position: C3Vector::new(17066.666, 10.0, 17000.0),
+            rotation: C3Vector::new(0.0, 90.0, 0.0),
+            doodad_set: 2,
+            ..Default::default()
+        }]);
         let bytes = wdt_bytes(&wdt);
 
         let mut name = WaBuffer::EMPTY;
@@ -545,8 +509,7 @@ mod tests {
 
     #[test]
     fn terrain_maps_have_no_global_wmo() {
-        let wdt = wow_alchemy_wdt::WdtFile::new(WowVersion::WotLK);
-        let bytes = wdt_bytes(&wdt);
+        let bytes = wdt_bytes(&WdtFile::default());
         let mut name = WaBuffer::EMPTY;
         let mut placement = std::mem::MaybeUninit::<WaPlacement>::uninit();
 

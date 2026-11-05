@@ -1,356 +1,369 @@
-// mh2o.rs - Enhanced water data parsing for WotLK+ ADT files
+//! MH2O: the liquids of a WotLK tile.
+//!
+//! Each of a tile's 256 chunks has a 12-byte [`Mh2oHeader`], and offsets count from the start of
+//! MH2O's data. A header points at its chunk's [`Mh2oInstance`]s, one per layer, and each
+//! instance at a bitmap of the cells it covers and its vertex data. That covers
+//! `(width + 1) * (height + 1)` vertices, as arrays that depend on the vertex format:
+//!
+//! ```text
+//! 0: f32 heights, u8 depths
+//! 1: f32 heights, u16 x 2 texture coordinates
+//! 2: u8 depths
+//! 3: f32 heights, u16 x 2 texture coordinates, u8 depths
+//! ```
+//!
+//! Layers with no vertex data sit flat at their minimum height. The chunk's data is kept as
+//! stored, since files share and order these pieces freely; this module reads it.
+//!
+//! See <https://wowdev.wiki/ADT/v18#MH2O_chunk_(WotLK+)>.
 
-use crate::ParserContext;
-use crate::error::Result;
-use crate::io_helpers::ReadLittleEndian;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-/// MH2O chunk - water data (WotLK+)
-#[derive(Debug, Clone)]
-pub struct Mh2oChunk {
-    /// Water data for each map chunk (256 entries)
-    pub chunks: Vec<Mh2oEntry>,
-}
+use custom_debug::Debug;
+use wow_alchemy_data::error::{Result, WowDataError};
+use wow_alchemy_data::prelude::*;
+use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
+use wow_alchemy_utils::debug;
 
-/// Water data for a single chunk
-#[derive(Debug, Clone)]
-pub struct Mh2oEntry {
-    /// Header for this entry
-    pub header: Mh2oHeader,
-    /// Water instances (layers) for this chunk
-    pub instances: Vec<Mh2oInstance>,
-    /// Render mask for liquid rendering
-    pub render_mask: Option<Mh2oRenderMask>,
-}
+/// Cells along one side of a chunk's liquid grid.
+pub const LIQUID_CELLS_PER_SIDE: usize = 8;
+/// Vertices along one side of a chunk's liquid grid.
+pub const LIQUID_VERTICES_PER_SIDE: usize = LIQUID_CELLS_PER_SIDE + 1;
+/// Vertices in a chunk's liquid grid.
+pub const LIQUID_VERTICES: usize = LIQUID_VERTICES_PER_SIDE * LIQUID_VERTICES_PER_SIDE;
 
-/// MH2O header for a single map chunk
-#[derive(Debug, Clone)]
+const CHUNKS_PER_TILE: usize = 256;
+const FORMAT_HEIGHT_AND_TEXTURE: u16 = 1;
+const FORMAT_DEPTH_ONLY: u16 = 2;
+const FORMAT_ALL: u16 = 3;
+const TEXTURE_COORDINATE_BYTES: usize = 4;
+/// How deep a layer with no depth data counts as, as a depth byte.
+const FULL_DEPTH: u8 = 255;
+
+/// One chunk's entry at the start of MH2O.
+#[derive(Debug, Clone, Default, PartialEq, WowHeaderR, WowHeaderW)]
 pub struct Mh2oHeader {
-    /// Offset to instance data, relative to the start of the MH2O chunk
-    pub offset_instances: u32,
-    /// Number of water layers in this chunk
+    /// 0 when the chunk has no liquid.
+    pub instances_offset: u32,
     pub layer_count: u32,
-    /// Offset to render mask, relative to the start of the MH2O chunk
-    pub offset_render_mask: u32,
+    /// 0 when the chunk has no [`Mh2oAttributes`].
+    pub attributes_offset: u32,
 }
 
-/// MH2O water instance (layer)
-#[derive(Debug, Clone)]
+/// One layer of liquid in a chunk.
+#[derive(Debug, Clone, Default, PartialEq, WowHeaderR, WowHeaderW)]
 pub struct Mh2oInstance {
-    /// Liquid type ID
+    /// Row in LiquidType.dbc.
     pub liquid_type: u16,
-    /// Liquid object ID
-    pub liquid_object: u16,
-    /// Water level (height) values
-    pub level_data: WaterLevelData,
-    /// Vertex data for water surface
-    pub vertex_data: Option<WaterVertexData>,
-    /// Attributes for this water layer
-    pub attributes: Vec<u64>,
+    /// How the vertex data is stored, 0 to 3; see the module.
+    pub vertex_format: u16,
+    pub min_height: f32,
+    pub max_height: f32,
+    pub x_offset: u8,
+    pub y_offset: u8,
+    pub width: u8,
+    pub height: u8,
+    /// A bit per cell of the `width` by `height` area, row by row with no padding; 0 means all.
+    pub exists_offset: u32,
+    /// 0 when the layer is flat.
+    pub vertex_data_offset: u32,
 }
 
-/// Water height information
-#[derive(Debug, Clone)]
-pub enum WaterLevelData {
-    /// Single water level for the entire chunk
-    Uniform {
-        /// Minimum height of water level
-        min_height: f32,
-        /// Maximum height of water level
-        max_height: f32,
-    },
-    /// Variable water heights
-    Variable {
-        /// Minimum height of water level
-        min_height: f32,
-        /// Maximum height of water level
-        max_height: f32,
-        /// Offset to height map, relative to MH2O chunk
-        offset_height_map: u32,
-        /// Height values for each vertex
-        heights: Option<Vec<f32>>,
-    },
+/// Which cells of a chunk are fishable and deep, a bit each, row by row.
+#[derive(Debug, Clone, Default, PartialEq, WowHeaderR, WowHeaderW)]
+pub struct Mh2oAttributes {
+    pub fishable: u64,
+    pub deep: u64,
 }
 
-/// Water vertex information
-#[derive(Debug, Clone)]
-pub struct WaterVertexData {
-    /// Offset to vertex data, relative to MH2O chunk
-    pub offset_vertex_data: u32,
-    /// Number of vertices in x direction
-    pub x_vertices: u8,
-    /// Number of vertices in y direction
-    pub y_vertices: u8,
-    /// Actual vertex data
-    pub vertices: Option<Vec<WaterVertex>>,
+/// One layer of liquid in one map chunk, on the chunk's full 9x9 grid. Columns run along the
+/// chunk's X index and rows along its Y index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiquidLayer {
+    /// The chunk's index: Y index * 16 + X index.
+    pub chunk: u16,
+    /// Row in LiquidType.dbc.
+    pub liquid_type: u16,
+    /// The format the file stored its vertices in.
+    pub vertex_format: u16,
+    /// Bit `row * 8 + column` is set when that cell has liquid.
+    pub cells: u64,
+    /// World heights, row by row. Limited to the layer's stated range, because the files can
+    /// hold garbage on vertices no cell uses.
+    #[debug(with = debug::trimmed_collection_fmt)]
+    pub heights: Vec<f32>,
+    /// How deep the liquid looks at each vertex, from 0 to 255, row by row.
+    #[debug(with = debug::trimmed_collection_fmt)]
+    pub depths: Vec<u8>,
 }
 
-/// Individual water vertex
-#[derive(Debug, Clone)]
-pub struct WaterVertex {
-    /// Depth at this vertex
-    pub depth: f32,
-    /// Flow direction and velocity
-    pub flow: [u8; 2],
+/// The MH2O chunk's data, as stored.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Mh2o {
+    #[debug(with = debug::trimmed_collection_fmt)]
+    pub data: Vec<u8>,
 }
 
-/// Render mask for water
-#[derive(Debug, Clone)]
-pub struct Mh2oRenderMask {
-    /// The mask is an 8x8 grid of bits, stored as 8 bytes
-    pub mask: [u8; 8],
-}
+impl Mh2o {
+    fn reader_at(&self, offset: u32) -> Cursor<&[u8]> {
+        let mut reader = Cursor::new(self.data.as_slice());
+        reader.set_position(offset as u64);
+        reader
+    }
 
-impl Mh2oChunk {
-    /// Parse a MH2O chunk from a reader
-    pub(crate) fn read_full<R: Read + Seek>(
-        context: &mut ParserContext<R>,
-        chunk_start: u64,
-        chunk_size: u32,
-    ) -> Result<Self> {
-        // Start position for calculating relative offsets
-        let start_pos = chunk_start;
+    /// The 256 chunk headers, by chunk index (Y index * 16 + X index).
+    pub fn headers(&self) -> Result<Vec<Mh2oHeader>> {
+        let mut reader = self.reader_at(0);
+        (0..CHUNKS_PER_TILE).map(|_| reader.wow_read()).collect()
+    }
 
-        // MH2O has up to 256 headers (one for each map chunk)
-        // Each header is 3 integers (12 bytes) according to WoWDev wiki
-        // Some files may have fewer headers if not all chunks have water
-        let max_possible_headers = chunk_size / 12;
-        let header_count = std::cmp::min(256, max_possible_headers) as usize;
+    /// A chunk's layers.
+    pub fn instances(&self, header: &Mh2oHeader) -> Result<Vec<Mh2oInstance>> {
+        if header.instances_offset == 0 {
+            return Ok(Vec::new());
+        }
+        let mut reader = self.reader_at(header.instances_offset);
+        (0..header.layer_count).map(|_| reader.wow_read()).collect()
+    }
 
-        // Read the headers first (only what's available)
-        let mut headers = Vec::with_capacity(256);
+    pub fn attributes(&self, header: &Mh2oHeader) -> Result<Option<Mh2oAttributes>> {
+        if header.attributes_offset == 0 {
+            return Ok(None);
+        }
+        self.reader_at(header.attributes_offset)
+            .wow_read()
+            .map(Some)
+    }
 
-        // Read available headers
-        for _ in 0..header_count {
-            let offset_instances = context.reader.read_u32_le()?;
-            let layer_count = context.reader.read_u32_le()?;
-            let offset_render_mask = context.reader.read_u32_le()?;
+    /// Every liquid layer of the tile, on each chunk's 9x9 grid.
+    pub fn liquid_layers(&self) -> Result<Vec<LiquidLayer>> {
+        let mut layers = Vec::new();
+        for (chunk, header) in self.headers()?.iter().enumerate() {
+            for instance in self.instances(header)? {
+                layers.push(self.grid_layer(chunk as u16, &instance)?);
+            }
+        }
+        Ok(layers)
+    }
 
-            // Note: offset_render_mask is actually offset_attributes in newer versions
-            // but we keep the old name for compatibility
+    fn grid_layer(&self, chunk: u16, instance: &Mh2oInstance) -> Result<LiquidLayer> {
+        let x_offset = instance.x_offset as usize;
+        let y_offset = instance.y_offset as usize;
+        let width = instance.width as usize;
+        let height = instance.height as usize;
+        let (min_height, max_height) = (instance.min_height, instance.max_height);
 
-            headers.push(Mh2oHeader {
-                offset_instances,
-                layer_count,
-                offset_render_mask,
-            });
+        if x_offset + width > LIQUID_CELLS_PER_SIDE || y_offset + height > LIQUID_CELLS_PER_SIDE {
+            return Err(WowDataError::InvalidData(format!(
+                "liquid in chunk {chunk} covers {width}x{height} cells at {x_offset},{y_offset}"
+            )));
         }
 
-        // Fill remaining headers with empty entries
-        for _ in header_count..256 {
-            headers.push(Mh2oHeader {
-                offset_instances: 0,
-                layer_count: 0,
-                offset_render_mask: 0,
-            });
+        let mut cells = 0u64;
+        let exists = match instance.exists_offset {
+            0 => None,
+            offset => {
+                let mut bitmap = vec![0; (width * height).div_ceil(8)];
+                self.reader_at(offset).read_exact(&mut bitmap)?;
+                Some(bitmap)
+            }
+        };
+        for row in 0..height {
+            for column in 0..width {
+                let bit = row * width + column;
+                let set = exists
+                    .as_ref()
+                    .is_none_or(|bitmap| bitmap[bit / 8] & (1 << (bit % 8)) != 0);
+                if set {
+                    cells |= 1 << ((row + y_offset) * LIQUID_CELLS_PER_SIDE + column + x_offset);
+                }
+            }
         }
 
-        // Process each header to read its data
-        let mut chunks = Vec::with_capacity(256);
+        let mut heights = vec![min_height; LIQUID_VERTICES];
+        let mut depths = vec![FULL_DEPTH; LIQUID_VERTICES];
+        if instance.vertex_data_offset != 0 {
+            let format = instance.vertex_format;
+            let stored = (width + 1) * (height + 1);
+            let has_heights = format != FORMAT_DEPTH_ONLY;
+            let has_depths = format != FORMAT_HEIGHT_AND_TEXTURE;
 
-        for header in headers {
-            let mut instances = Vec::new();
-            let mut render_mask = None;
+            let mut reader = self.reader_at(instance.vertex_data_offset);
+            let stored_heights: Vec<f32> = if has_heights {
+                (0..stored)
+                    .map(|_| reader.wow_read())
+                    .collect::<Result<_>>()?
+            } else {
+                Vec::new()
+            };
+            if format == FORMAT_ALL {
+                reader.seek(SeekFrom::Current(
+                    (stored * TEXTURE_COORDINATE_BYTES) as i64,
+                ))?;
+            }
+            let mut stored_depths = vec![0; if has_depths { stored } else { 0 }];
+            reader.read_exact(&mut stored_depths)?;
 
-            // Read water instances
-            if header.offset_instances > 0 && header.layer_count > 0 {
-                // Validate that the offset is within the chunk bounds
-                if header.offset_instances >= chunk_size {
-                    // Skip this header if offset is invalid
-                    chunks.push(Mh2oEntry {
-                        header,
-                        instances: Vec::new(),
-                        render_mask: None,
-                    });
-                    continue;
-                }
-
-                context
-                    .reader
-                    .seek(SeekFrom::Start(start_pos + header.offset_instances as u64))?;
-
-                for _layer_idx in 0..header.layer_count {
-                    // Try to read instance header, break on EOF
-                    let instance_result = (|| -> Result<Mh2oInstance> {
-                        let liquid_type = context.reader.read_u16_le()?;
-                        let liquid_object = context.reader.read_u16_le()?;
-                        let min_height = context.reader.read_f32_le()?;
-                        let max_height = context.reader.read_f32_le()?;
-
-                        let _x_offset = context.reader.read_u8()?;
-                        let _y_offset = context.reader.read_u8()?;
-                        let _width = context.reader.read_u8()?;
-                        let _height = context.reader.read_u8()?;
-
-                        let _offset_mask_2bit = context.reader.read_u32_le()?;
-                        let offset_height_map = context.reader.read_u32_le()?;
-
-                        // Vertex data
-                        let mut vertex_data = None;
-                        let offset_vertex_data = context.reader.read_u32_le()?;
-                        if offset_vertex_data > 0 {
-                            let x_vertices = context.reader.read_u8()?;
-                            let y_vertices = context.reader.read_u8()?;
-                            let _liquid_flags = context.reader.read_u16_le()?;
-
-                            vertex_data = Some(WaterVertexData {
-                                offset_vertex_data,
-                                x_vertices,
-                                y_vertices,
-                                vertices: None, // Will be read later
-                            });
-                        } else {
-                            // Skip the 4 bytes if no vertex data
-                            context.reader.seek(SeekFrom::Current(4))?;
-                        }
-
-                        // Read attribute data - these are 64-bit flags since MoP
-                        // In Cataclysm they were different, but we'll keep it simple
-                        let attribute_count = if context.version >= crate::version::AdtVersion::MoP
-                        {
-                            context.reader.read_u32_le()?
-                        } else {
-                            0
-                        };
-
-                        let mut attributes = Vec::new();
-                        for _ in 0..attribute_count {
-                            let attribute = context.reader.read_u64_le()?;
-                            attributes.push(attribute);
-                        }
-
-                        // Determine level data type
-                        let level_data = if offset_height_map > 0 {
-                            // Variable height water
-                            WaterLevelData::Variable {
-                                min_height,
-                                max_height,
-                                offset_height_map,
-                                heights: None, // Will be read later
-                            }
-                        } else {
-                            // Uniform height water
-                            WaterLevelData::Uniform {
-                                min_height,
-                                max_height,
-                            }
-                        };
-
-                        Ok(Mh2oInstance {
-                            liquid_type,
-                            liquid_object,
-                            level_data,
-                            vertex_data,
-                            attributes,
-                        })
-                    })();
-
-                    match instance_result {
-                        Ok(instance) => {
-                            instances.push(instance);
-                        }
-                        Err(_) => {
-                            // EOF or other read error - stop reading instances
-                            // This is normal for some ADT files with incomplete water data
-                            break;
+            for row in 0..=height {
+                for column in 0..=width {
+                    let source = row * (width + 1) + column;
+                    let target = (row + y_offset) * LIQUID_VERTICES_PER_SIDE + column + x_offset;
+                    if has_heights {
+                        // A NaN stays at the minimum, as clamp would pass it through.
+                        let value = stored_heights[source];
+                        if value.is_finite() && min_height <= max_height {
+                            heights[target] = value.clamp(min_height, max_height);
                         }
                     }
-                }
-
-                // Now go back and read all the variable data
-                // (height maps, vertex data, etc.)
-                for instance in &mut instances {
-                    // Read height map data if needed
-                    if let WaterLevelData::Variable {
-                        offset_height_map,
-                        heights,
-                        ..
-                    } = &mut instance.level_data
-                    {
-                        if *offset_height_map > 0 && *offset_height_map < chunk_size {
-                            // Try to read height map data, skip on error
-                            let height_result = (|| -> Result<Vec<f32>> {
-                                context
-                                    .reader
-                                    .seek(SeekFrom::Start(start_pos + *offset_height_map as u64))?;
-
-                                // Typically a 9x9 grid for water heights
-                                let mut height_data = Vec::with_capacity(9 * 9);
-                                for _ in 0..9 * 9 {
-                                    let height = context.reader.read_f32_le()?;
-                                    height_data.push(height);
-                                }
-
-                                Ok(height_data)
-                            })();
-
-                            if let Ok(height_data) = height_result {
-                                *heights = Some(height_data);
-                            }
-                        }
-                    }
-
-                    // Read vertex data if needed
-                    if let Some(vertex_data) = &mut instance.vertex_data {
-                        if vertex_data.offset_vertex_data > 0
-                            && vertex_data.offset_vertex_data < chunk_size
-                        {
-                            // Try to read vertex data, skip on error
-                            let vertex_result = (|| -> Result<Vec<WaterVertex>> {
-                                context.reader.seek(SeekFrom::Start(
-                                    start_pos + vertex_data.offset_vertex_data as u64,
-                                ))?;
-
-                                let x_verts = vertex_data.x_vertices as usize;
-                                let y_verts = vertex_data.y_vertices as usize;
-                                let vert_count = x_verts * y_verts;
-
-                                let mut verts = Vec::with_capacity(vert_count);
-                                for _ in 0..vert_count {
-                                    let depth = context.reader.read_f32_le()?;
-                                    let mut flow = [0u8; 2];
-                                    context.reader.read_exact(&mut flow)?;
-
-                                    verts.push(WaterVertex { depth, flow });
-                                }
-
-                                Ok(verts)
-                            })();
-
-                            if let Ok(verts) = vertex_result {
-                                vertex_data.vertices = Some(verts);
-                            }
-                        }
+                    if has_depths {
+                        depths[target] = stored_depths[source];
                     }
                 }
             }
-
-            // Read render mask
-            if header.offset_render_mask > 0 && header.offset_render_mask < chunk_size {
-                // Try to read render mask, skip on error
-                let mask_result = (|| -> Result<Mh2oRenderMask> {
-                    context.reader.seek(SeekFrom::Start(
-                        start_pos + header.offset_render_mask as u64,
-                    ))?;
-
-                    let mut mask = [0u8; 8];
-                    context.reader.read_exact(&mut mask)?;
-
-                    Ok(Mh2oRenderMask { mask })
-                })();
-
-                if let Ok(mask) = mask_result {
-                    render_mask = Some(mask);
-                }
-            }
-
-            chunks.push(Mh2oEntry {
-                header,
-                instances,
-                render_mask,
-            });
         }
 
-        Ok(Self { chunks })
+        Ok(LiquidLayer {
+            chunk,
+            liquid_type: instance.liquid_type,
+            vertex_format: instance.vertex_format,
+            cells,
+            heights,
+            depths,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HEADER_BYTES: usize = 12;
+    const INSTANCE_BYTES: usize = 24;
+    const EXTRA: u32 = (CHUNKS_PER_TILE * HEADER_BYTES + INSTANCE_BYTES) as u32;
+
+    /// An MH2O chunk with one layer in chunk 17, whose extra data starts after the headers.
+    fn chunk_with(instance: Mh2oInstance, extra: &[u8]) -> Mh2o {
+        let mut headers = vec![Mh2oHeader::default(); CHUNKS_PER_TILE];
+        headers[17] = Mh2oHeader {
+            instances_offset: (CHUNKS_PER_TILE * HEADER_BYTES) as u32,
+            layer_count: 1,
+            attributes_offset: 0,
+        };
+        let mut data = Vec::new();
+        WowHeaderW::wow_write(headers.as_slice(), &mut data).unwrap();
+        instance.wow_write(&mut data).unwrap();
+        data.extend_from_slice(extra);
+        Mh2o { data }
+    }
+
+    fn instance(format: u16, area: [u8; 4], exists: u32, vertices: u32) -> Mh2oInstance {
+        Mh2oInstance {
+            liquid_type: 5,
+            vertex_format: format,
+            min_height: 10.0,
+            max_height: 20.0,
+            x_offset: area[0],
+            y_offset: area[1],
+            width: area[2],
+            height: area[3],
+            exists_offset: exists,
+            vertex_data_offset: vertices,
+        }
+    }
+
+    fn floats(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn records_have_the_stored_sizes() {
+        assert_eq!(Mh2oHeader::default().wow_size(), HEADER_BYTES);
+        assert_eq!(Mh2oInstance::default().wow_size(), INSTANCE_BYTES);
+    }
+
+    #[test]
+    fn places_vertices_and_depths_on_the_full_grid() {
+        let mut extra = floats(&[11.0, 12.0, 13.0, 14.0]);
+        extra.extend_from_slice(&[1, 2, 3, 4]);
+
+        let layers = chunk_with(instance(0, [2, 3, 1, 1], 0, EXTRA), &extra)
+            .liquid_layers()
+            .unwrap();
+
+        assert_eq!(layers.len(), 1);
+        let layer = &layers[0];
+        assert_eq!((layer.chunk, layer.liquid_type), (17, 5));
+        assert_eq!(layer.cells, 1 << (3 * 8 + 2));
+        assert_eq!(layer.heights[3 * 9 + 2], 11.0);
+        assert_eq!(layer.heights[3 * 9 + 3], 12.0);
+        assert_eq!(layer.heights[4 * 9 + 2], 13.0);
+        assert_eq!(layer.heights[4 * 9 + 3], 14.0);
+        assert_eq!(layer.depths[4 * 9 + 3], 4);
+        assert_eq!(layer.heights[0], 10.0);
+    }
+
+    #[test]
+    fn exists_bits_run_through_the_area_without_padding_rows() {
+        // 3 wide and 2 tall: the second row starts at bit 3, not at a new byte.
+        let mh2o = chunk_with(instance(0, [0, 0, 3, 2], EXTRA, 0), &[0b0010_1001]);
+        let layer = &mh2o.liquid_layers().unwrap()[0];
+        assert_eq!(layer.cells, 1 | (1 << 8) | (1 << (8 + 2)));
+    }
+
+    #[test]
+    fn depth_only_format_stays_at_the_minimum_height() {
+        let mh2o = chunk_with(instance(2, [0, 0, 1, 1], 0, EXTRA), &[9, 8, 7, 6]);
+        let layer = &mh2o.liquid_layers().unwrap()[0];
+        assert_eq!(layer.heights[0], 10.0);
+        assert_eq!(layer.depths[0], 9);
+        assert_eq!(layer.depths[10], 6);
+    }
+
+    #[test]
+    fn height_only_format_counts_as_fully_deep() {
+        let mh2o = chunk_with(instance(1, [0, 0, 1, 1], 0, EXTRA), &floats(&[15.0; 4]));
+        let layer = &mh2o.liquid_layers().unwrap()[0];
+        assert_eq!(layer.heights[0], 15.0);
+        assert_eq!(layer.depths[0], FULL_DEPTH);
+    }
+
+    #[test]
+    fn full_format_has_depths_after_texture_coordinates() {
+        let mut extra = floats(&[15.0; 4]);
+        extra.extend_from_slice(&[0xAA; 16]);
+        extra.extend_from_slice(&[1, 2, 3, 4]);
+        let mh2o = chunk_with(instance(3, [0, 0, 1, 1], 0, EXTRA), &extra);
+        let layer = &mh2o.liquid_layers().unwrap()[0];
+        assert_eq!(layer.heights[0], 15.0);
+        assert_eq!(layer.depths[0], 1);
+        assert_eq!(layer.depths[10], 4);
+    }
+
+    #[test]
+    fn heights_outside_the_stated_range_are_limited() {
+        let mut extra = floats(&[1000.0, -1000.0, f32::NAN, 15.0]);
+        extra.extend_from_slice(&[0; 4]);
+        let mh2o = chunk_with(instance(0, [0, 0, 1, 1], 0, EXTRA), &extra);
+        let layer = &mh2o.liquid_layers().unwrap()[0];
+        assert_eq!(layer.heights[0], 20.0);
+        assert_eq!(layer.heights[1], 10.0);
+        assert_eq!(layer.heights[9], 10.0);
+        assert_eq!(layer.heights[10], 15.0);
+    }
+
+    #[test]
+    fn rejects_areas_off_the_grid_and_short_data() {
+        let mh2o = chunk_with(instance(0, [7, 0, 2, 1], 0, 0), &[]);
+        assert!(mh2o.liquid_layers().is_err());
+        let mh2o = chunk_with(instance(0, [0, 0, 1, 1], 0, EXTRA), &[0; 3]);
+        assert!(mh2o.liquid_layers().is_err());
+    }
+
+    #[test]
+    fn a_chunk_without_liquid_has_no_layers() {
+        let mh2o = Mh2o {
+            data: vec![0; CHUNKS_PER_TILE * HEADER_BYTES],
+        };
+        assert!(mh2o.liquid_layers().unwrap().is_empty());
     }
 }

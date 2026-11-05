@@ -1,52 +1,29 @@
-//! (listfile) parsing functionality
+//! `(listfile)`: the names of the archive's files, one per line.
 
-use crate::Result;
-
-/// Parse a (listfile) into individual filenames
-///
-/// The (listfile) format supports:
-/// - One filename per line
-/// - Comments starting with ';' or '#'
-/// - Optional file metadata after ';' on each line
-/// - Empty lines are ignored
-pub fn parse_listfile(data: &[u8]) -> Result<Vec<String>> {
-    let content = match std::str::from_utf8(data) {
-        Ok(s) => s.to_string(),
-        Err(_) => {
-            // Try lossy conversion for files with invalid UTF-8
-            log::warn!("(listfile) contains invalid UTF-8, using lossy conversion");
-            String::from_utf8_lossy(data).into_owned()
-        }
-    };
-
-    let files: Vec<String> = content
+/// The names in a `(listfile)`. Blank lines and lines starting with `;` or `#` are skipped,
+/// and anything after a `;` on a line is dropped.
+pub fn parse_listfile(data: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(data)
         .lines()
         .filter_map(|line| {
             let line = line.trim();
-
-            // Skip empty lines and comments
             if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
                 return None;
             }
-
-            // Handle semicolon-separated format (filename;metadata)
-            let filename = if let Some(pos) = line.find(';') {
-                line[..pos].trim()
-            } else {
-                line
-            };
-
-            // Skip if the result is empty
-            if filename.is_empty() {
-                None
-            } else {
-                Some(filename.to_string())
-            }
+            let name = line.split(';').next().unwrap_or(line).trim();
+            (!name.is_empty()).then(|| name.to_string())
         })
-        .collect();
+        .collect()
+}
 
-    log::debug!("Parsed {} files from (listfile)", files.len());
-    Ok(files)
+/// A `(listfile)` of these names, one per line ending in CRLF.
+pub fn build_listfile<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<u8> {
+    let mut out = Vec::new();
+    for name in names {
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(b"\r\n");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -54,74 +31,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_simple_listfile() {
-        let content = b"file1.txt\nfile2.dat\nfile3.bin";
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 3);
-        assert_eq!(files[0], "file1.txt");
-        assert_eq!(files[1], "file2.dat");
-        assert_eq!(files[2], "file3.bin");
+    fn parses_lines_and_skips_comments() {
+        let data = b"; comment\r\nfile1.txt\r\n# other\n\n  dir\\file2.dat ; meta\nfile3";
+        assert_eq!(
+            parse_listfile(data),
+            ["file1.txt", "dir\\file2.dat", "file3"]
+        );
     }
 
     #[test]
-    fn test_parse_listfile_with_comments() {
-        let content = b"; This is a comment\n\
-                       file1.txt\n\
-                       # Another comment\n\
-                       file2.dat\n\
-                       ; file3.txt - commented out\n\
-                       file4.bin";
-
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 3);
-        assert_eq!(files[0], "file1.txt");
-        assert_eq!(files[1], "file2.dat");
-        assert_eq!(files[2], "file4.bin");
-    }
-
-    #[test]
-    fn test_parse_listfile_with_metadata() {
-        let content = b"file1.txt;12345\n\
-                       file2.dat;67890;extra data\n\
-                       file3.bin";
-
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 3);
-        assert_eq!(files[0], "file1.txt");
-        assert_eq!(files[1], "file2.dat");
-        assert_eq!(files[2], "file3.bin");
-    }
-
-    #[test]
-    fn test_parse_empty_listfile() {
-        let content = b"";
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_listfile_only_comments() {
-        let content = b"; Comment 1\n# Comment 2\n; Comment 3";
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_listfile_with_empty_lines() {
-        let content = b"file1.txt\n\n\nfile2.dat\n\n";
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0], "file1.txt");
-        assert_eq!(files[1], "file2.dat");
-    }
-
-    #[test]
-    fn test_parse_listfile_with_whitespace() {
-        let content = b"  file1.txt  \n\tfile2.dat\t\n   file3.bin   ;   metadata   ";
-        let files = parse_listfile(content).unwrap();
-        assert_eq!(files.len(), 3);
-        assert_eq!(files[0], "file1.txt");
-        assert_eq!(files[1], "file2.dat");
-        assert_eq!(files[2], "file3.bin");
+    fn round_trips() {
+        let names = ["a.txt", "b\\c.blp"];
+        assert_eq!(parse_listfile(&build_listfile(names)), names);
     }
 }

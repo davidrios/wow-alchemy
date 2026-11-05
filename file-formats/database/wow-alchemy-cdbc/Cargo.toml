@@ -8,13 +8,12 @@ repository.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/wow-alchemy-cdbc"
-description = "Parser for World of Warcraft DBC (client database) files with serialization support"
+description = "Reader and writer for World of Warcraft DBC and WDB2 client database tables"
 readme = "README.md"
 keywords = ["wow", "warcraft", "dbc", "database", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
 wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
 wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
 rayon = { workspace = true, optional = true }
@@ -26,10 +25,10 @@ reqwest = { version = "0.12.23", default-features = false, features = ["rustls-t
 rusqlite = { version = "0.37.0", optional = true }
 
 [dev-dependencies]
+wow-alchemy-mpq = { path = "../../archives/wow-alchemy-mpq", version = "0.2.0" }
 
 [features]
 default = []
 sqlite = ["dep:rusqlite"]
 sqlite_bundled = ["rusqlite/bundled"]
 parallel = ["dep:rayon"]
-trimmed-debug-output = ["wow-alchemy-utils/trimmed-debug-output"]

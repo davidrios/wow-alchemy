@@ -8,25 +8,14 @@ repository.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 readme = "README.md"
-description = "Parser, editor, and converter for World of Warcraft WMO (World Model Object) files"
+description = "Reader and writer for World of Warcraft 3.3.5a WMO (World Model Object) files"
 categories = ["game-development", "parser-implementations"]
 keywords = ["wow", "warcraft", "wmo", "parser", "gamedev"]
 
 [dependencies]
 wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
 wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
-# Error handling
-thiserror = { workspace = true }
-
-# Data structures
 bitflags = { workspace = true }
 
-# Logging
-tracing = "0.1.41"
-
 [dev-dependencies]
-criterion = { workspace = true }
-tempfile = { workspace = true }
-rstest = { workspace = true }
-test-case = { workspace = true }
-
+wow-alchemy-mpq = { path = "../../archives/wow-alchemy-mpq", version = "0.2.0" }

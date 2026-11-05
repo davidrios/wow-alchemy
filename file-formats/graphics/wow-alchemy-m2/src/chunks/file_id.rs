@@ -44,35 +44,9 @@ impl SkinFiles {
             );
         };
 
-        let first: u32 = reader.wow_read()?;
-        let item_size = first.wow_size();
-        let items = chunk_header.bytes as usize / item_size;
-
-        let rest = chunk_header.bytes as usize % item_size;
-        if rest > 0 {
-            dbg!(format!(
-                "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
-                String::from_utf8_lossy(&chunk_header.magic),
-                item_size,
-                items,
-                rest
-            ));
-        }
-
-        let mut file_ids = Vec::with_capacity(nviews as usize);
-        file_ids.push(first);
-
-        for _ in 1..nviews {
-            file_ids.push(reader.wow_read()?);
-        }
-
-        let lod_file_ids_count = items.saturating_sub(nviews as usize);
-        let mut lod_file_ids = Vec::with_capacity(lod_file_ids_count);
-        for _ in 0..lod_file_ids_count {
-            lod_file_ids.push(reader.wow_read()?);
-        }
-
-        reader.seek_relative(rest as i64)?;
+        // The skin profiles' files come first, then their LODs'.
+        let mut file_ids: Vec<FileId> = reader.wow_read_from_chunk(chunk_header)?;
+        let lod_file_ids = file_ids.split_off((nviews as usize).min(file_ids.len()));
 
         Ok(Self {
             file_ids,

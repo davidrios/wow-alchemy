@@ -4,139 +4,35 @@ use crate::error::Result;
 
 use super::types::*;
 
-impl WowHeaderR for u32 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_u32::<LittleEndian>()?)
-    }
-}
-impl WowHeaderW for u32 {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u32::<LittleEndian>(*self)?;
-        Ok(())
-    }
+/// Little-endian numbers, which every WoW format stores.
+macro_rules! impl_number {
+    ($ty:ty, $read:ident, $write:ident) => {
+        impl WowHeaderR for $ty {
+            fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+                Ok(reader.$read::<LittleEndian>()?)
+            }
+        }
 
-    fn wow_size(&self) -> usize {
-        4
-    }
-}
+        impl WowHeaderW for $ty {
+            fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
+                writer.$write::<LittleEndian>(*self)?;
+                Ok(())
+            }
 
-impl WowHeaderR for (u32, u32) {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok((reader.wow_read()?, reader.wow_read()?))
-    }
-}
-impl WowHeaderW for (u32, u32) {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self.0)?;
-        writer.wow_write(&self.1)?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        8
-    }
+            fn wow_size(&self) -> usize {
+                size_of::<$ty>()
+            }
+        }
+    };
 }
 
-impl WowHeaderR for [u32; 3] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [u32; 3] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        writer.wow_write(&self[2])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_u32.wow_size() * 3
-    }
-}
-
-impl WowHeaderR for i32 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_i32::<LittleEndian>()?)
-    }
-}
-impl WowHeaderW for i32 {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_i32::<LittleEndian>(*self)?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        4
-    }
-}
-
-impl WowHeaderR for i16 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_i16::<LittleEndian>()?)
-    }
-}
-impl WowHeaderW for i16 {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_i16::<LittleEndian>(*self)?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        2
-    }
-}
-
-impl WowHeaderR for [i16; 2] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [i16; 2] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_i16.wow_size() * 2
-    }
-}
-
-impl WowHeaderR for u16 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_u16::<LittleEndian>()?)
-    }
-}
-impl WowHeaderW for u16 {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<LittleEndian>(*self)?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        2
-    }
-}
-
-impl WowHeaderR for [u16; 3] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [u16; 3] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        writer.wow_write(&self[2])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_u16.wow_size() * 3
-    }
-}
+impl_number!(u16, read_u16, write_u16);
+impl_number!(i16, read_i16, write_i16);
+impl_number!(u32, read_u32, write_u32);
+impl_number!(i32, read_i32, write_i32);
+impl_number!(u64, read_u64, write_u64);
+impl_number!(i64, read_i64, write_i64);
+impl_number!(f32, read_f32, write_f32);
 
 impl WowHeaderR for u8 {
     fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
@@ -151,47 +47,6 @@ impl WowHeaderW for u8 {
 
     fn wow_size(&self) -> usize {
         1
-    }
-}
-
-impl WowHeaderR for [u8; 2] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.read_u8()?, reader.read_u8()?])
-    }
-}
-impl WowHeaderW for [u8; 2] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        for i in 0..2 {
-            writer.write_u8((*self)[i])?;
-        }
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        2
-    }
-}
-
-impl WowHeaderR for [u8; 4] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([
-            reader.read_u8()?,
-            reader.read_u8()?,
-            reader.read_u8()?,
-            reader.read_u8()?,
-        ])
-    }
-}
-impl WowHeaderW for [u8; 4] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        for i in 0..4 {
-            writer.write_u8((*self)[i])?;
-        }
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        4
     }
 }
 
@@ -211,75 +66,63 @@ impl WowHeaderW for i8 {
     }
 }
 
-impl WowHeaderR for u64 {
+impl<A: WowHeaderR, B: WowHeaderR> WowHeaderR for (A, B) {
     fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_u64::<LittleEndian>()?)
+        Ok((reader.wow_read()?, reader.wow_read()?))
     }
 }
-impl WowHeaderW for u64 {
+impl<A: WowHeaderW, B: WowHeaderW> WowHeaderW for (A, B) {
     fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u64::<LittleEndian>(*self)?;
+        writer.wow_write(&self.0)?;
+        writer.wow_write(&self.1)?;
         Ok(())
     }
 
     fn wow_size(&self) -> usize {
-        8
+        self.0.wow_size() + self.1.wow_size()
     }
 }
 
-impl WowHeaderR for i64 {
+/// Fixed-size arrays of any record, as many WoW records hold, including magics.
+impl<T: WowHeaderR, const N: usize> WowHeaderR for [T; N] {
     fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_i64::<LittleEndian>()?)
+        let mut items = Vec::with_capacity(N);
+        for _ in 0..N {
+            items.push(T::wow_read(reader)?);
+        }
+        match items.try_into() {
+            Ok(array) => Ok(array),
+            Err(_) => unreachable!("read exactly N items"),
+        }
     }
 }
-impl WowHeaderW for i64 {
+
+impl<T: WowHeaderW> WowHeaderW for [T] {
     fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_i64::<LittleEndian>(*self)?;
+        for item in self {
+            item.wow_write(writer)?;
+        }
         Ok(())
     }
 
     fn wow_size(&self) -> usize {
-        8
+        self.iter().map(WowHeaderW::wow_size).sum()
     }
 }
 
-impl WowHeaderR for f32 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(reader.read_f32::<LittleEndian>()?)
-    }
-}
-impl WowHeaderW for f32 {
+impl<T: WowHeaderW, const N: usize> WowHeaderW for [T; N] {
     fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_f32::<LittleEndian>(*self)?;
-        Ok(())
+        self.as_slice().wow_write(writer)
     }
 
     fn wow_size(&self) -> usize {
-        4
-    }
-}
-
-impl WowHeaderR for [f32; 3] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [f32; 3] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        writer.wow_write(&self[2])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_f32.wow_size() * 3
+        self.as_slice().wow_size()
     }
 }
 
 impl WowHeaderW for String {
     fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(self)?;
+        writer.write_all(self.as_bytes())?;
         // write null terminator
         writer.wow_write(&0_u8)?;
         Ok(())
@@ -337,36 +180,3 @@ where
         header.wow_read_to_vec(reader)
     }
 }
-
-/// Fixed-size arrays of plain values, as many WoW records hold.
-macro_rules! impl_array {
-    ($item:ty, $count:literal) => {
-        impl WowHeaderR for [$item; $count] {
-            fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-                let mut items = [<$item>::default(); $count];
-                for item in &mut items {
-                    *item = <$item as WowHeaderR>::wow_read(reader)?;
-                }
-                Ok(items)
-            }
-        }
-
-        impl WowHeaderW for [$item; $count] {
-            fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-                for item in self {
-                    item.wow_write(writer)?;
-                }
-                Ok(())
-            }
-
-            fn wow_size(&self) -> usize {
-                $count * std::mem::size_of::<$item>()
-            }
-        }
-    };
-}
-
-impl_array!(u32, 4);
-impl_array!(u8, 20);
-impl_array!(f32, 4);
-impl_array!(i16, 6);

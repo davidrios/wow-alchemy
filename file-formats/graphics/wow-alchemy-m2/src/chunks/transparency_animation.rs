@@ -1,4 +1,3 @@
-use wow_alchemy_data::prelude::*;
 use wow_alchemy_data_derive::{WowDataR, WowHeaderR, WowHeaderW};
 
 use crate::version::MD20Version;

@@ -7,31 +7,13 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Parser, validator, and converter for World of Warcraft WDT (World Data Table) files"
+description = "Reader and writer for World of Warcraft WDT (World Data Table) files"
 keywords = ["wow", "wdt", "world-of-warcraft", "game", "parser"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-# Core dependencies
-thiserror = { workspace = true }
+wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
+wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
+wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
+custom_debug = { workspace = true }
 bitflags = { workspace = true }
-
-anyhow = { workspace = true }
-
-# Serialization support (optional)
-serde = { workspace = true, features = ["derive"], optional = true }
-serde_json = { workspace = true, optional = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
-pretty_assertions = { workspace = true }
-criterion = { workspace = true }
-
-[features]
-default = []
-serde = ["dep:serde", "dep:serde_json"]
-
-[lib]
-name = "wow_alchemy_wdt"
-path = "src/lib.rs"
-

@@ -1,10 +1,7 @@
 use custom_debug::Debug;
 use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 
-use crate::{
-    error::{Result, WowDataError},
-    v_read_chunk_items,
-};
+use crate::error::{Result, WowDataError};
 pub use std::io::{Read, Seek, SeekFrom, Write};
 
 mod wow_alchemy_data {
@@ -188,31 +185,7 @@ where
         reader: &mut R,
         chunk_header: &ChunkHeader,
     ) -> Result<Vec<Self>> {
-        let first: W = reader.wow_read()?;
-        let item_size = first.wow_size();
-        let items = chunk_header.bytes as usize / item_size;
-
-        let rest = chunk_header.bytes as usize % item_size;
-        if rest > 0 {
-            dbg!(format!(
-                "chunk items size mismatch: chunk={} item_size={}, items={}, rest={}",
-                String::from_utf8_lossy(&chunk_header.magic),
-                item_size,
-                items,
-                rest
-            ));
-        }
-
-        let mut vec = Vec::<W>::with_capacity(items);
-        vec.push(first);
-
-        for _ in 1..items {
-            vec.push(reader.wow_read()?);
-        }
-
-        reader.seek_relative(rest as i64)?;
-
-        Ok(vec)
+        chunk_header.read_records(reader, |r| W::wow_read(r))
     }
 }
 
@@ -258,7 +231,7 @@ where
 
         Ok(VersionedChunk {
             version,
-            items: v_read_chunk_items!(reader, version, chunk_header, Self),
+            items: chunk_header.read_records(reader, |r| W::wow_read(r, version))?,
         })
     }
 }
@@ -815,81 +788,182 @@ impl ColorA {
     }
 }
 
-impl WowHeaderR for [ColorA; 3] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [ColorA; 3] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        writer.wow_write(&self[2])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_f32.wow_size() * 4 * 3
-    }
-}
-
 #[derive(Debug, Clone, WowHeaderR, WowHeaderW)]
 pub struct VectorFp6_9 {
     pub x: u16,
     pub y: u16,
 }
 
-impl WowHeaderR for [VectorFp6_9; 2] {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok([reader.wow_read()?, reader.wow_read()?])
-    }
-}
-impl WowHeaderW for [VectorFp6_9; 2] {
-    fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self[0])?;
-        writer.wow_write(&self[1])?;
-        Ok(())
-    }
-
-    fn wow_size(&self) -> usize {
-        0_u16.wow_size() * 2 * 2
-    }
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
 pub struct Mat3x4 {
     pub items: [C4Vector; 3],
 }
 
-impl WowHeaderR for Mat3x4 {
-    fn wow_read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Ok(Self {
-            items: [
-                C4Vector::wow_read(reader)?,
-                C4Vector::wow_read(reader)?,
-                C4Vector::wow_read(reader)?,
-            ],
-        })
+/// The start of every chunk in a chunked file: a magic, as stored, and the size of the body that
+/// follows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+pub struct ChunkHeader {
+    pub magic: MagicStr,
+    pub bytes: u32,
+}
+
+impl ChunkHeader {
+    /// Reads the records that fill the chunk with `read`, from the start of its body, and leaves
+    /// the reader at the chunk's end. Records are read from the body alone, so bytes left at the
+    /// end that are too few for another record are skipped rather than read past.
+    pub fn read_records<R, T, F>(&self, reader: &mut R, mut read: F) -> Result<Vec<T>>
+    where
+        R: Read,
+        F: FnMut(&mut std::io::Cursor<&[u8]>) -> Result<T>,
+    {
+        let body = self.read_body(reader)?;
+        let mut cursor = std::io::Cursor::new(body.as_slice());
+        let mut items = Vec::new();
+        while (cursor.position() as usize) < body.len() {
+            match read(&mut cursor) {
+                Ok(item) => items.push(item),
+                Err(WowDataError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(items)
+    }
+
+    /// Reads the whole body, from the start of it.
+    pub fn read_body<R: Read>(&self, reader: &mut R) -> Result<Vec<u8>> {
+        let mut body = vec![0; self.bytes as usize];
+        reader.read_exact(&mut body)?;
+        Ok(body)
     }
 }
 
-impl WowHeaderW for Mat3x4 {
+/// Reads chunk after chunk from the reader's position to its end, calling `f` with each header
+/// and the reader at the start of the body. Afterwards the reader is put at the end of the
+/// chunk, however much `f` read, and reading past it is an error. Fewer than 8 bytes left at the
+/// end are ignored, but a chunk longer than what's left is an error.
+pub fn read_chunks<R, F>(reader: &mut R, mut f: F) -> Result<()>
+where
+    R: Read + Seek,
+    F: FnMut(&mut R, &ChunkHeader) -> Result<()>,
+{
+    let start = reader.stream_position()?;
+    let end = reader.seek(SeekFrom::End(0))?;
+    reader.seek(SeekFrom::Start(start))?;
+
+    let mut position = start;
+    while position + 8 <= end {
+        let header: ChunkHeader = reader.wow_read()?;
+        let body = position + 8;
+        let chunk_end = body + header.bytes as u64;
+        if chunk_end > end {
+            return Err(WowDataError::ChunkOverrun {
+                magic: String::from_utf8_lossy(&header.magic).into(),
+                bytes: header.bytes,
+                available: end - body,
+            });
+        }
+
+        f(reader, &header)?;
+
+        let read_to = reader.stream_position()?;
+        if read_to > chunk_end {
+            return Err(WowDataError::ChunkOverrun {
+                magic: String::from_utf8_lossy(&header.magic).into(),
+                bytes: header.bytes,
+                available: read_to - body,
+            });
+        }
+        reader.seek(SeekFrom::Start(chunk_end))?;
+        position = chunk_end;
+    }
+
+    Ok(())
+}
+
+/// Writes one chunk: its magic, as stored, the body's size, and the body.
+pub fn write_chunk<W, T>(writer: &mut W, magic: MagicStr, body: &T) -> Result<()>
+where
+    W: Write,
+    T: WowHeaderW + ?Sized,
+{
+    writer.wow_write(&ChunkHeader {
+        magic,
+        bytes: body.wow_size() as u32,
+    })?;
+    body.wow_write(writer)
+}
+
+/// Null-terminated strings stored one after another, as file name chunks such as MTEX, MMDX,
+/// MWMO, MOTX and MODN are. Records name a string by its offset in the block.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StringBlock {
+    pub bytes: Vec<u8>,
+}
+
+impl StringBlock {
+    pub fn read<R: Read>(reader: &mut R, header: &ChunkHeader) -> Result<Self> {
+        Ok(Self {
+            bytes: header.read_body(reader)?,
+        })
+    }
+
+    /// Makes a block of the strings, returning it and each string's offset.
+    pub fn from_strings<S: AsRef<str>>(strings: &[S]) -> (Self, Vec<u32>) {
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::with_capacity(strings.len());
+        for s in strings {
+            offsets.push(bytes.len() as u32);
+            bytes.extend_from_slice(s.as_ref().as_bytes());
+            bytes.push(0);
+        }
+        (Self { bytes }, offsets)
+    }
+
+    /// The string starting at `offset`, up to the next null or the block's end. `None` past the
+    /// end.
+    pub fn get(&self, offset: u32) -> Option<String> {
+        self.get_bytes(offset)
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    /// Like [`Self::get`], but the string's bytes, borrowed from the block.
+    pub fn get_bytes(&self, offset: u32) -> Option<&[u8]> {
+        let rest = self
+            .bytes
+            .get(offset as usize..)
+            .filter(|r| !r.is_empty())?;
+        let end = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
+        Some(&rest[..end])
+    }
+
+    /// Each string that isn't empty, with its offset. Empty ones are padding between them.
+    pub fn strings(&self) -> Vec<(u32, String)> {
+        let mut found = Vec::new();
+        let mut offset = 0;
+        for part in self.bytes.split(|&b| b == 0) {
+            if !part.is_empty() {
+                found.push((offset as u32, String::from_utf8_lossy(part).into_owned()));
+            }
+            offset += part.len() + 1;
+        }
+        found
+    }
+
+    /// The strings that aren't empty, in order.
+    pub fn names(&self) -> Vec<String> {
+        self.strings().into_iter().map(|(_, s)| s).collect()
+    }
+}
+
+impl WowHeaderW for StringBlock {
     fn wow_write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.wow_write(&self.items[0])?;
-        writer.wow_write(&self.items[1])?;
-        writer.wow_write(&self.items[2])?;
+        writer.write_all(&self.bytes)?;
         Ok(())
     }
 
     fn wow_size(&self) -> usize {
-        self.items[0].wow_size() * 3
+        self.bytes.len()
     }
-}
-
-#[derive(Debug, Clone, Default, WowHeaderR, WowHeaderW)]
-pub struct ChunkHeader {
-    pub magic: MagicStr,
-    pub bytes: u32,
 }
 
 #[cfg(test)]
@@ -898,6 +972,115 @@ mod tests {
 
     use super::*;
     use std::io::Cursor;
+
+    fn chunked(chunks: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        for (magic, body) in chunks {
+            write_chunk(&mut out, **magic, *body).unwrap();
+        }
+        out.into_inner()
+    }
+
+    #[test]
+    fn read_chunks_visits_each_chunk_and_skips_what_isnt_read() {
+        let data = chunked(&[
+            (b"AAAA", &[1, 0, 2, 0]),
+            (b"BBBB", &[]),
+            (b"CCCC", &[9, 9, 9]),
+        ]);
+        let mut seen = Vec::new();
+        read_chunks(&mut Cursor::new(&data), |reader, header| {
+            let first: Option<u16> = if header.bytes >= 2 {
+                Some(reader.wow_read()?)
+            } else {
+                None
+            };
+            seen.push((header.magic, header.bytes, first));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            seen,
+            vec![
+                (*b"AAAA", 4, Some(1)),
+                (*b"BBBB", 0, None),
+                (*b"CCCC", 3, Some(0x0909))
+            ]
+        );
+    }
+
+    #[test]
+    fn read_chunks_rejects_a_chunk_longer_than_the_data() {
+        let mut data = chunked(&[(b"AAAA", &[1, 2, 3, 4])]);
+        data.truncate(10);
+        let error = read_chunks(&mut Cursor::new(&data), |_, _| Ok(())).unwrap_err();
+        assert!(matches!(
+            error,
+            WowDataError::ChunkOverrun {
+                bytes: 4,
+                available: 2,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn read_chunks_rejects_reading_past_a_chunk() {
+        let data = chunked(&[(b"AAAA", &[1, 2]), (b"BBBB", &[3, 4])]);
+        let result = read_chunks(&mut Cursor::new(&data), |reader, _| {
+            let _: u32 = reader.wow_read()?;
+            Ok(())
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn chunk_records_fill_the_chunk_and_ignore_a_partial_tail() {
+        let data = chunked(&[(b"AAAA", &[1, 0, 2, 0, 3]), (b"BBBB", &[]), (b"CCCC", &[7])]);
+        let mut lists = Vec::new();
+        read_chunks(&mut Cursor::new(&data), |reader, header| {
+            let items: Vec<u16> = reader.wow_read_from_chunk(header)?;
+            lists.push(items);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(lists, vec![vec![1, 2], vec![], vec![]]);
+    }
+
+    #[test]
+    fn string_blocks_find_names_by_offset() {
+        let (block, offsets) = StringBlock::from_strings(&["a.m2", "", "bc.wmo"]);
+        assert_eq!(offsets, vec![0, 5, 6]);
+        assert_eq!(block.bytes, b"a.m2\0\0bc.wmo\0");
+        assert_eq!(block.get(6).as_deref(), Some("bc.wmo"));
+        // Offsets can point into the middle of a name.
+        assert_eq!(block.get(9).as_deref(), Some("wmo"));
+        assert_eq!(block.get(13), None);
+        assert_eq!(
+            block.strings(),
+            vec![(0, "a.m2".to_string()), (6, "bc.wmo".to_string())]
+        );
+    }
+
+    #[test]
+    fn arrays_and_tuples_of_records_read_and_write() {
+        let data = [1u8, 0, 2, 0, 3, 0, 0, 0, 0x80, 0x3F];
+        let mut cursor = Cursor::new(&data);
+        let value: ([u16; 2], (u16, [u8; 4])) = cursor.wow_read().unwrap();
+        assert_eq!(value, ([1, 2], (3, [0, 0, 0x80, 0x3F])));
+        assert_eq!(value.wow_size(), data.len());
+
+        let mut out = Vec::new();
+        value.wow_write(&mut out).unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn strings_write_with_a_null() {
+        let mut out = Vec::new();
+        String::from("ab").wow_write(&mut out).unwrap();
+        assert_eq!(out, b"ab\0");
+    }
 
     #[test]
     fn test_u32_read_write() {

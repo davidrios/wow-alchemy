@@ -8,31 +8,20 @@ repository.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/wow-alchemy-blp"
-description = "Parser and encoder for World of Warcraft BLP texture files with DXT compression support"
+description = "Reader and writer for World of Warcraft BLP textures, with conversion to and from images"
 readme = "README.md"
 keywords = ["wow", "warcraft", "blp", "texture", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
+wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
+wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
 custom_debug = { workspace = true }
 thiserror = { workspace = true }
-log = { workspace = true }
-bytes = { workspace = true }
-
-# Image processing
 image = "0.25"
 color_quant = "1.1"
-
-# Compression
 texpresso = { version = "2.0", features = ["rayon"] }
 
 [dev-dependencies]
-env_logger = { workspace = true }
 tempfile = { workspace = true }
-test-log = "0.2"
-pretty_assertions = { workspace = true }
-criterion = { workspace = true }
-
-[features]
-default = []
+wow-alchemy-mpq = { path = "../../archives/wow-alchemy-mpq" }

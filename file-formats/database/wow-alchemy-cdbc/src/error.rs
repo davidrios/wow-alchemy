@@ -1,7 +1,7 @@
 use std::io;
 use thiserror::Error;
-use wow_alchemy_data::error::WowDataError;
 
+/// Errors of definitions, typed reading and conversion, on top of reading the file's.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("I/O error: {0}")]
@@ -14,7 +14,7 @@ pub enum Error {
     #[error("Rusqlite error: {0}")]
     Rusqlite(#[from] rusqlite::Error),
 
-    #[error("WowData error: {0}")]
+    #[error("{0}")]
     WowData(#[from] wow_alchemy_data::error::WowDataError),
 
     #[error("GameBuild error: {0}")]
@@ -26,12 +26,6 @@ pub enum Error {
     #[error("Error generating SQLite table definition: {0}")]
     SqliteTableDefinition(String),
 
-    #[error("Generic error: {0}")]
+    #[error("{0}")]
     GenericError(String),
-}
-
-impl From<Error> for WowDataError {
-    fn from(value: Error) -> Self {
-        WowDataError::GenericError(format!("Error: {}", value))
-    }
 }

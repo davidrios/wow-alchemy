@@ -1,4 +1,3 @@
-use wow_alchemy_data::prelude::*;
 use wow_alchemy_data::types::{C2Vector, C3Vector};
 use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 

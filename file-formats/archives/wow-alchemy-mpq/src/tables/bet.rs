@@ -1,412 +1,271 @@
-//! BET (Block Extended Table) implementation for MPQ v3+ archives
+//! The BET table of v3+ archives: bit-packed file entries and the rest of each name hash.
 
-use super::common::decrypt_table_data;
-use crate::compression::decompress;
-use crate::{Error, Result};
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Write};
 
-/// BET (Block Entry Table) for v3+ archives
-#[derive(Debug)]
-pub struct BetTable {
-    /// Table header data
-    pub header: BetHeader,
-    /// File flags array
-    pub file_flags: Vec<u32>,
-    /// File table (bit-packed)
-    pub file_table: Vec<u8>,
-    /// BET hash array
-    pub bet_hashes: Vec<u64>,
-}
+use wow_alchemy_data::prelude::*;
+use wow_alchemy_data::types::MagicStr;
+use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 
-/// Block Entry Table (BET) header structure for MPQ v3+
-/// This follows the extended header in the file
-#[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+use super::bits::{BitArray, bits_needed};
+use super::block::BlockFlags;
+use crate::Result;
+use crate::crypto::het_hash;
+
+/// Magic of the BET table.
+pub const BET_MAGIC: MagicStr = *b"BET\x1A";
+
+/// The BET table's header, after its [`super::ExtTableHeader`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
 pub struct BetHeader {
-    /// Size of the entire table including header
+    /// Size of this header and the arrays after it.
     pub table_size: u32,
-    /// Number of files in BET table
-    pub file_count: u32,
-    /// Unknown, typically 0x10
+    /// Files in the table.
+    pub entry_count: u32,
+    /// Always 0x10.
     pub unknown_08: u32,
-    /// Size of one table entry in bits
+    /// Bits of one file entry.
     pub table_entry_size: u32,
-    /// Bit positions for various fields
+    /// Bit offset of the file position in an entry.
     pub bit_index_file_pos: u32,
-    /// Bit index for file size field
+    /// Bit offset of the file size in an entry.
     pub bit_index_file_size: u32,
-    /// Bit index for compressed size field
+    /// Bit offset of the stored size in an entry.
     pub bit_index_cmp_size: u32,
-    /// Bit index for flag index field
+    /// Bit offset of the flag index in an entry.
     pub bit_index_flag_index: u32,
-    /// Bit index for unknown field
+    /// Bit offset of the unknown field in an entry.
     pub bit_index_unknown: u32,
-    /// Bit counts for various fields
+    /// Bits of the file position.
     pub bit_count_file_pos: u32,
-    /// Bit count for file size field
+    /// Bits of the file size.
     pub bit_count_file_size: u32,
-    /// Bit count for compressed size field
+    /// Bits of the stored size.
     pub bit_count_cmp_size: u32,
-    /// Bit count for flag index field
+    /// Bits of the flag index.
     pub bit_count_flag_index: u32,
-    /// Bit count for unknown field
+    /// Bits of the unknown field.
     pub bit_count_unknown: u32,
-    /// BET hash information
-    pub total_bet_hash_size: u32,
-    /// Extra bits in BET hash size
-    pub bet_hash_size_extra: u32,
-    /// Size of BET hash
-    pub bet_hash_size: u32,
-    /// Size of BET hash array
-    pub bet_hash_array_size: u32,
-    /// Number of flags
+    /// Bits each name hash takes in the hash array.
+    pub bit_total_name_hash2: u32,
+    /// Extra bits after each name hash.
+    pub bit_extra_name_hash2: u32,
+    /// Bits of each name hash: the HET hash size minus 8.
+    pub bit_count_name_hash2: u32,
+    /// Size of the hash array in bytes.
+    pub name_hash_array_size: u32,
+    /// Entries in the flag array.
     pub flag_count: u32,
 }
 
+impl BetHeader {
+    /// Size on disk.
+    pub const SIZE: usize = 76;
+}
+
+/// One file of the BET table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BetFileInfo {
+    /// Offset of the data from the archive start.
+    pub file_pos: u64,
+    /// Size of the file.
+    pub file_size: u64,
+    /// Stored size.
+    pub compressed_size: u64,
+    /// Flags.
+    pub flags: BlockFlags,
+}
+
+/// A decoded BET table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BetTable {
+    /// Its header.
+    pub header: BetHeader,
+    /// The distinct flags files use.
+    pub flags: Vec<BlockFlags>,
+    /// The file entries.
+    pub file_table: BitArray,
+    /// The low bits of each file's name hash.
+    pub name_hashes: BitArray,
+}
+
 impl BetTable {
-    const SIGNATURE: u32 = 0x1A544542; // "BET\x1A"
-
-    /// Read and decompress/decrypt a BET table
-    pub fn read<R: Read + Seek>(
-        reader: &mut R,
-        offset: u64,
-        compressed_size: u64,
-        key: u32,
-    ) -> Result<Self> {
-        reader.seek(SeekFrom::Start(offset))?;
-
-        // Read the compressed/encrypted data
-        let mut data = vec![0u8; compressed_size as usize];
-        reader.read_exact(&mut data)?;
-
-        // Check if we have at least the extended header (12 bytes)
-        if data.len() < 12 {
-            return Err(Error::invalid_format(
-                "BET table too small for extended header",
-            ));
-        }
-
-        // Parse the extended header (first 12 bytes - never encrypted)
-        let ext_signature = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        let ext_version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        let ext_data_size = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
-
-        log::debug!(
-            "BET extended header: sig=0x{ext_signature:08X}, ver={ext_version}, data_size={ext_data_size}"
-        );
-
-        // Verify extended header
-        if ext_signature != Self::SIGNATURE {
-            // Check if we got HET signature instead - this is a known issue in some archives
-            if ext_signature == 0x1A544548 {
-                return Err(Error::invalid_format(
-                    "BET offset points to HET table - archive has swapped table offsets",
-                ));
+    /// Builds a table of these files and names; a file without a name gets a zero hash.
+    pub fn build(files: &[(BetFileInfo, Option<&str>)]) -> Self {
+        let max_pos = files.iter().map(|(f, _)| f.file_pos).max().unwrap_or(0);
+        let max_size = files.iter().map(|(f, _)| f.file_size).max().unwrap_or(0);
+        let max_cmp = files
+            .iter()
+            .map(|(f, _)| f.compressed_size)
+            .max()
+            .unwrap_or(0);
+        let mut flags: Vec<BlockFlags> = Vec::new();
+        for (file, _) in files {
+            if !flags.contains(&file.flags) {
+                flags.push(file.flags);
             }
-            return Err(Error::invalid_format("Invalid BET extended signature"));
         }
-
-        // The data after the extended header may be encrypted
-        if key != 0 && data.len() > 12 {
-            log::debug!("Decrypting BET data after extended header with key 0x{key:08X}");
-            let data_portion = &mut data[12..];
-            decrypt_table_data(data_portion, key);
-        }
-
-        // Check for compression by comparing sizes
-        let total_size = data.len();
-        let expected_uncompressed_size = ext_data_size as usize + 12; // data_size + header
-
-        log::debug!(
-            "BET table total_size={total_size}, expected_uncompressed_size={expected_uncompressed_size}"
-        );
-
-        let table_data = if expected_uncompressed_size > total_size {
-            // Table is compressed - the data after extended header contains compressed data
-            log::debug!("BET table is compressed");
-
-            if data.len() <= 12 {
-                return Err(Error::invalid_format(
-                    "No compressed data after BET extended header",
-                ));
-            }
-
-            // First byte after extended header is compression type
-            let compression_type = data[12];
-            log::debug!("BET compression type: 0x{compression_type:02X}");
-
-            // Decompress the data (skip extended header and compression byte)
-            let compressed_data = &data[13..];
-            let mut decompressed =
-                decompress(compressed_data, compression_type, ext_data_size as usize)?;
-
-            // Reconstruct the full table with extended header
-            let mut full_table = Vec::with_capacity(12 + decompressed.len());
-            full_table.extend_from_slice(&data[..12]); // Extended header
-            full_table.append(&mut decompressed); // Decompressed data
-            full_table
-        } else {
-            // Table is not compressed
-            log::debug!("BET table is NOT compressed");
-            data
-        };
-
-        // Parse header - skip the extended header (first 12 bytes)
-        let header = Self::parse_header(&table_data[12..])?;
-
-        // Copy values to avoid packed struct issues
-        let file_count = header.file_count;
-        let table_entry_size = header.table_entry_size;
-        let flag_count = header.flag_count;
-        let bit_count_file_pos = header.bit_count_file_pos;
-        let bit_index_file_pos = header.bit_index_file_pos;
-        let bit_count_file_size = header.bit_count_file_size;
-        let bit_index_file_size = header.bit_index_file_size;
-        let bit_count_cmp_size = header.bit_count_cmp_size;
-        let bit_index_cmp_size = header.bit_index_cmp_size;
-        let bit_count_flag_index = header.bit_count_flag_index;
-        let bit_index_flag_index = header.bit_index_flag_index;
-
-        log::debug!(
-            "BET header: file_count={file_count}, table_entry_size={table_entry_size} bits, flag_count={flag_count}"
-        );
-        log::debug!(
-            "BET field bits: file_pos={bit_count_file_pos} at {bit_index_file_pos}, file_size={bit_count_file_size} at {bit_index_file_size}, cmp_size={bit_count_cmp_size} at {bit_index_cmp_size}, flag_index={bit_count_flag_index} at {bit_index_flag_index}"
-        );
-
-        // No need to validate signature/version - they're in the extended header
-        // which we already validated above
-
-        // Parse the rest of the table - data starts after extended header + BET header
-        let data_start = 12 + std::mem::size_of::<BetHeader>();
-        let mut cursor = std::io::Cursor::new(&table_data[data_start..]);
-
-        // Read file flags
-        let mut file_flags = Vec::with_capacity(header.flag_count as usize);
-        for _ in 0..header.flag_count {
-            file_flags.push(cursor.read_u32::<LittleEndian>()?);
-        }
-
-        // Calculate sizes
-        let file_table_size =
-            (header.file_count as usize * header.table_entry_size as usize).div_ceil(8);
-        let mut file_table = vec![0u8; file_table_size];
-        cursor.read_exact(&mut file_table)?;
-
-        // Read BET hashes
-        let hash_count = header.bet_hash_array_size / 8; // Each hash is 8 bytes
-        let mut bet_hashes = Vec::with_capacity(hash_count as usize);
-        for _ in 0..hash_count {
-            bet_hashes.push(cursor.read_u64::<LittleEndian>()?);
-        }
-
-        Ok(Self {
-            header,
-            file_flags,
-            file_table,
-            bet_hashes,
-        })
-    }
-
-    /// Parse header from raw bytes
-    fn parse_header(data: &[u8]) -> Result<BetHeader> {
-        if data.len() < std::mem::size_of::<BetHeader>() {
-            return Err(Error::invalid_format("BET header too small"));
-        }
-
-        let mut cursor = std::io::Cursor::new(data);
-        Ok(BetHeader {
-            table_size: cursor.read_u32::<LittleEndian>()?,
-            file_count: cursor.read_u32::<LittleEndian>()?,
-            unknown_08: cursor.read_u32::<LittleEndian>()?,
-            table_entry_size: cursor.read_u32::<LittleEndian>()?,
-            bit_index_file_pos: cursor.read_u32::<LittleEndian>()?,
-            bit_index_file_size: cursor.read_u32::<LittleEndian>()?,
-            bit_index_cmp_size: cursor.read_u32::<LittleEndian>()?,
-            bit_index_flag_index: cursor.read_u32::<LittleEndian>()?,
-            bit_index_unknown: cursor.read_u32::<LittleEndian>()?,
-            bit_count_file_pos: cursor.read_u32::<LittleEndian>()?,
-            bit_count_file_size: cursor.read_u32::<LittleEndian>()?,
-            bit_count_cmp_size: cursor.read_u32::<LittleEndian>()?,
-            bit_count_flag_index: cursor.read_u32::<LittleEndian>()?,
-            bit_count_unknown: cursor.read_u32::<LittleEndian>()?,
-            total_bet_hash_size: cursor.read_u32::<LittleEndian>()?,
-            bet_hash_size_extra: cursor.read_u32::<LittleEndian>()?,
-            bet_hash_size: cursor.read_u32::<LittleEndian>()?,
-            bet_hash_array_size: cursor.read_u32::<LittleEndian>()?,
-            flag_count: cursor.read_u32::<LittleEndian>()?,
-        })
-    }
-
-    /// Get file information by index
-    pub fn get_file_info(&self, index: u32) -> Option<BetFileInfo> {
-        let file_count = self.header.file_count;
-        if index >= file_count {
-            log::debug!("BET get_file_info: index {index} >= file_count {file_count}");
-            return None;
-        }
-
-        log::debug!("BET get_file_info: getting info for file index {index}");
-
-        // Calculate the bit position for this entry
-        let table_entry_size = self.header.table_entry_size as usize;
-        let entry_bit_position = index as usize * table_entry_size;
-
-        log::debug!(
-            "BET get_file_info: entry at bit position {entry_bit_position}, entry size {table_entry_size} bits"
-        );
-
-        // Read each field directly from the bit stream
-        let file_pos = self.read_bits_from_table(
-            entry_bit_position + self.header.bit_index_file_pos as usize,
-            self.header.bit_count_file_pos,
-        )?;
-
-        let file_size = self.read_bits_from_table(
-            entry_bit_position + self.header.bit_index_file_size as usize,
-            self.header.bit_count_file_size,
-        )?;
-
-        let cmp_size = self.read_bits_from_table(
-            entry_bit_position + self.header.bit_index_cmp_size as usize,
-            self.header.bit_count_cmp_size,
-        )?;
-
-        let flag_index = self.read_bits_from_table(
-            entry_bit_position + self.header.bit_index_flag_index as usize,
-            self.header.bit_count_flag_index,
-        )? as u32;
-
-        log::debug!(
-            "BET get_file_info: file_pos=0x{file_pos:X}, file_size={file_size}, cmp_size={cmp_size}, flag_index={flag_index}"
-        );
-
-        // Get flags
-        let flags = if flag_index < self.header.flag_count {
-            self.file_flags[flag_index as usize]
+        let count_pos = bits_needed(max_pos);
+        let count_size = bits_needed(max_size);
+        let count_cmp = bits_needed(max_cmp);
+        let count_flag = if flags.len() > 1 {
+            bits_needed(flags.len() as u64 - 1)
         } else {
             0
         };
-
-        Some(BetFileInfo {
-            file_pos,
-            file_size,
-            compressed_size: cmp_size,
+        let entry_size = count_pos + count_size + count_cmp + count_flag;
+        let hash_bits = 56;
+        let mut header = BetHeader {
+            table_size: 0,
+            entry_count: files.len() as u32,
+            unknown_08: 0x10,
+            table_entry_size: entry_size,
+            bit_index_file_pos: 0,
+            bit_index_file_size: count_pos,
+            bit_index_cmp_size: count_pos + count_size,
+            bit_index_flag_index: count_pos + count_size + count_cmp,
+            bit_index_unknown: entry_size,
+            bit_count_file_pos: count_pos,
+            bit_count_file_size: count_size,
+            bit_count_cmp_size: count_cmp,
+            bit_count_flag_index: count_flag,
+            bit_count_unknown: 0,
+            bit_total_name_hash2: hash_bits,
+            bit_extra_name_hash2: 0,
+            bit_count_name_hash2: hash_bits,
+            name_hash_array_size: 0,
+            flag_count: flags.len() as u32,
+        };
+        let mut file_table = BitArray::new(files.len() * entry_size as usize);
+        let mut name_hashes = BitArray::new(files.len() * hash_bits as usize);
+        for (i, (file, name)) in files.iter().enumerate() {
+            let base = i * entry_size as usize;
+            let flag_index = flags.iter().position(|f| *f == file.flags).unwrap_or(0);
+            file_table.set(
+                base + header.bit_index_file_pos as usize,
+                count_pos,
+                file.file_pos,
+            );
+            file_table.set(
+                base + header.bit_index_file_size as usize,
+                count_size,
+                file.file_size,
+            );
+            file_table.set(
+                base + header.bit_index_cmp_size as usize,
+                count_cmp,
+                file.compressed_size,
+            );
+            file_table.set(
+                base + header.bit_index_flag_index as usize,
+                count_flag,
+                flag_index as u64,
+            );
+            let hash = name.map_or(0, |name| het_hash(name, 64));
+            name_hashes.set(i * hash_bits as usize, hash_bits, hash);
+        }
+        header.name_hash_array_size = name_hashes.bytes.len() as u32;
+        header.table_size = (BetHeader::SIZE + flags.len() * 4 + file_table.bytes.len()) as u32
+            + header.name_hash_array_size;
+        Self {
+            header,
             flags,
+            file_table,
+            name_hashes,
+        }
+    }
+
+    /// Reads the table from its body, after the [`super::ExtTableHeader`], decrypted and
+    /// decompressed.
+    pub fn from_body(body: &[u8]) -> Result<Self> {
+        let mut cursor = Cursor::new(body);
+        let header: BetHeader = cursor.wow_read()?;
+        let mut flags = Vec::with_capacity(header.flag_count as usize);
+        for _ in 0..header.flag_count {
+            flags.push(cursor.wow_read()?);
+        }
+        let table_bits = header.entry_count as usize * header.table_entry_size as usize;
+        let mut file_table = vec![0u8; table_bits.div_ceil(8)];
+        cursor.read_exact(&mut file_table)?;
+        let mut name_hashes = vec![0u8; header.name_hash_array_size as usize];
+        cursor.read_exact(&mut name_hashes)?;
+        Ok(Self {
+            header,
+            flags,
+            file_table: BitArray { bytes: file_table },
+            name_hashes: BitArray { bytes: name_hashes },
         })
     }
 
-    /// Read bits from file table at the given bit position
-    fn read_bits_from_table(&self, bit_position: usize, bit_count: u32) -> Option<u64> {
-        if bit_count == 0 {
-            return Some(0);
-        }
+    /// The table's body, before encryption.
+    pub fn to_body(&self) -> Result<Vec<u8>> {
+        let mut body = Vec::with_capacity(self.header.table_size as usize);
+        self.header.wow_write(&mut body)?;
+        self.flags.as_slice().wow_write(&mut body)?;
+        body.write_all(&self.file_table.bytes)?;
+        body.write_all(&self.name_hashes.bytes)?;
+        Ok(body)
+    }
 
-        if bit_count > 64 {
-            log::warn!("read_bits_from_table: bit_count {bit_count} > 64");
+    /// File entry `index`.
+    pub fn file(&self, index: u32) -> Option<BetFileInfo> {
+        if index >= self.header.entry_count {
             return None;
         }
+        let h = &self.header;
+        let base = index as usize * h.table_entry_size as usize;
+        let field = |offset: u32, count: u32| self.file_table.get(base + offset as usize, count);
+        let flag_index = field(h.bit_index_flag_index, h.bit_count_flag_index)? as usize;
+        Some(BetFileInfo {
+            file_pos: field(h.bit_index_file_pos, h.bit_count_file_pos)?,
+            file_size: field(h.bit_index_file_size, h.bit_count_file_size)?,
+            compressed_size: field(h.bit_index_cmp_size, h.bit_count_cmp_size)?,
+            flags: self.flags.get(flag_index).copied().unwrap_or_default(),
+        })
+    }
 
-        let byte_offset = bit_position / 8;
-        let bit_shift = bit_position % 8;
-        let bytes_needed = ((bit_position % 8) + bit_count as usize).div_ceil(8);
-
-        if byte_offset + bytes_needed > self.file_table.len() {
-            return None;
-        }
-
-        // Read enough bytes to cover the bits we need
-        let mut value = 0u64;
-        for i in 0..bytes_needed.min(8) {
-            if byte_offset + i < self.file_table.len() {
-                value |= (self.file_table[byte_offset + i] as u64) << (i * 8);
-            }
-        }
-
-        // Extract the bits we want
-        let mask = if bit_count >= 64 {
+    /// Whether file `index`'s stored name hash matches the full HET hash of a name.
+    pub fn matches(&self, index: u32, het_hash: u64) -> bool {
+        let bits = self.header.bit_count_name_hash2;
+        let position = index as usize * self.header.bit_total_name_hash2 as usize;
+        let mask = if bits >= 64 {
             u64::MAX
         } else {
-            (1u64 << bit_count) - 1
+            (1u64 << bits) - 1
         };
-        Some((value >> bit_shift) & mask)
+        self.name_hashes.get(position, bits) == Some(het_hash & mask)
     }
 }
 
-/// File information from BET table
-#[derive(Debug)]
-pub struct BetFileInfo {
-    /// File position in archive
-    pub file_pos: u64,
-    /// Uncompressed file size
-    pub file_size: u64,
-    /// Compressed file size
-    pub compressed_size: u64,
-    /// File flags
-    pub flags: u32,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl BetTable {
-    /// Get the BET hash for a file at the given index
-    ///
-    /// This hash is used for collision resolution when HET returns multiple candidates.
-    /// The hash is a Jenkins hashlittle2 hash of the filename (same as HET).
-    pub fn get_file_hash(&self, file_index: u32) -> Option<u64> {
-        let index = file_index as usize;
-        if index < self.bet_hashes.len() {
-            Some(self.bet_hashes[index])
-        } else {
-            log::debug!(
-                "BET get_file_hash: index {} out of bounds (bet_hashes.len()={})",
-                index,
-                self.bet_hashes.len()
-            );
-            None
-        }
-    }
-
-    /// Verify if a file index matches the expected hash for a filename
-    ///
-    /// Returns true if the BET hash for the given file_index matches the computed
-    /// Jenkins hashlittle2 hash for the filename.
-    ///
-    /// Note: BET uses the SAME hash algorithm as HET (jenkins_hashlittle2 with uppercase).
-    /// The stored hash may be truncated to bet_hash_size bits.
-    pub fn verify_file_hash(&self, file_index: u32, filename: &str) -> bool {
-        if let Some(stored_hash) = self.get_file_hash(file_index) {
-            // BET uses the same hash as HET: jenkins_hashlittle2 with uppercase normalization
-            // The bet_hash_size field tells us how many bits are stored
-            let bet_hash_size = self.header.bet_hash_size;
-
-            // Compute the hash using hashlittle2 (same as HET)
-            let (full_hash, _name_hash1) = crate::crypto::het_hash(filename, bet_hash_size);
-
-            // Mask to the number of bits stored in BET
-            let mask = if bet_hash_size >= 64 {
-                u64::MAX
-            } else {
-                (1u64 << bet_hash_size) - 1
-            };
-            let computed_hash = full_hash & mask;
-
-            log::debug!(
-                "BET verify_file_hash: file_index={}, stored=0x{:016X}, computed=0x{:016X} (bet_hash_size={}), match={}",
-                file_index,
-                stored_hash,
-                computed_hash,
-                bet_hash_size,
-                stored_hash == computed_hash
-            );
-
-            stored_hash == computed_hash
-        } else {
-            // No hash stored for this index - can't verify
-            log::debug!(
-                "BET verify_file_hash: no hash stored for file_index={}",
-                file_index
-            );
-            false
-        }
+    #[test]
+    fn builds_and_round_trips() {
+        let file = |pos, size, flags| BetFileInfo {
+            file_pos: pos,
+            file_size: size,
+            compressed_size: size / 2,
+            flags,
+        };
+        let files = [
+            (file(0x2C, 100, BlockFlags::EXISTS), Some("a.txt")),
+            (
+                file(
+                    0x1_0000_0000,
+                    5000,
+                    BlockFlags::EXISTS | BlockFlags::COMPRESS,
+                ),
+                Some("b.txt"),
+            ),
+        ];
+        let table = BetTable::build(&files);
+        let read = BetTable::from_body(&table.to_body().unwrap()).unwrap();
+        assert_eq!(read, table);
+        assert_eq!(read.file(0), Some(files[0].0));
+        assert_eq!(read.file(1), Some(files[1].0));
+        assert_eq!(read.file(2), None);
+        assert!(read.matches(1, het_hash("B.TXT", 64)));
+        assert!(!read.matches(0, het_hash("b.txt", 64)));
     }
 }

@@ -8,18 +8,16 @@ repository.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/wow-alchemy-wdl"
-description = "Parser for World of Warcraft WDL (World Detail Level) low-resolution terrain files"
+description = "Reader and writer for World of Warcraft WDL (low-resolution world) files"
 readme = "README.md"
 keywords = ["wow", "warcraft", "wdl", "terrain", "gamedev"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-thiserror = { workspace = true }
-memchr = "2.7"
+wow-alchemy-utils = { path = "../../../wow-alchemy-utils", version = "0.2.0" }
+wow-alchemy-data = { path = "../../wow-alchemy-data", version = "0.2.0" }
+wow-alchemy-data-derive = { path = "../../wow-alchemy-data-derive", version = "0.2.0" }
+custom_debug = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-
-[features]
-default = []
-
+wow-alchemy-mpq = { path = "../../archives/wow-alchemy-mpq", version = "0.2.0" }

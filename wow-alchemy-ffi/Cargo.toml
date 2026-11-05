@@ -3,8 +3,7 @@ name = "wow-alchemy-ffi"
 version = "0.2.0"
 authors.workspace = true
 edition.workspace = true
-# wow-alchemy-mpq requires 1.92.
-rust-version = "1.92"
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

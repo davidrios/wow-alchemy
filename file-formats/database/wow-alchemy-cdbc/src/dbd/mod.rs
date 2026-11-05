@@ -18,34 +18,21 @@ pub struct GameBuild {
 impl TryFrom<&str> for GameBuild {
     type Error = Error;
 
+    /// Parses `major.minor.patch.build`, as `3.3.5.12340`.
     fn try_from(value: &str) -> Result<Self> {
-        let parts = value.split(&".");
-        let mut vals: [u32; 4] = [0, 0, 0, 0];
-        let mut count = 0;
-
-        for part in parts {
-            let Ok(val) = part.parse() else {
-                return Err(Error::GameBuild(format!(
-                    "can't convert string {} to game build",
-                    value
-                )));
-            };
-            vals[count] = val;
-
-            count += 1;
-            if count > 4 {
-                return Err(Error::GameBuild(format!(
-                    "can't convert string {} to game build",
-                    value
-                )));
-            }
-        }
-
+        let parts: Vec<u32> = value
+            .split('.')
+            .map(|part| part.parse().ok())
+            .collect::<Option<_>>()
+            .filter(|parts: &Vec<u32>| parts.len() == 4)
+            .ok_or_else(|| {
+                Error::GameBuild(format!("can't convert string {value} to game build"))
+            })?;
         Ok(Self {
-            major: vals[0],
-            minor: vals[1],
-            patch: vals[2],
-            build: vals[3],
+            major: parts[0],
+            minor: parts[1],
+            patch: parts[2],
+            build: parts[3],
         })
     }
 }
@@ -131,6 +118,8 @@ pub struct DbdBuild {
 
 #[derive(Debug, Clone)]
 pub struct DbdFile {
+    /// The build the definition was picked for.
+    pub game_build: GameBuild,
     pub columns: HashMap<String, DbdColumn>,
     pub build: DbdBuild,
 }
@@ -218,11 +207,11 @@ pub fn parse_dbd_content(game_build: &GameBuild, content: &str) -> Result<DbdFil
     }
 
     if current_build_fields.is_empty() {
-        println!("{content}");
         return Err(Error::NoFieldsForBuild);
     }
 
     Ok(DbdFile {
+        game_build: game_build.clone(),
         columns,
         build: DbdBuild {
             versions: current_build_versions,
@@ -297,19 +286,20 @@ fn parse_field_line(line: &str) -> DbdField {
     let mut is_relation = false;
     let mut is_noninline = false;
 
-    // Check for special markers
-    let line = if let Some(stripped) = line.strip_prefix("$id$") {
-        is_key = true;
-        stripped
-    } else if let Some(stripped) = line.strip_prefix("$noninline,id$") {
-        is_key = true;
-        is_noninline = true;
-        stripped
-    } else if let Some(stripped) = line.strip_prefix("$relation$") {
-        is_relation = true;
-        stripped
-    } else {
-        line
+    // Annotations, as `$noninline,id$`.
+    let line = match line.strip_prefix('$').and_then(|rest| rest.split_once('$')) {
+        Some((annotations, rest)) => {
+            for annotation in annotations.split(',') {
+                match annotation.trim() {
+                    "id" => is_key = true,
+                    "relation" => is_relation = true,
+                    "noninline" => is_noninline = true,
+                    _ => {}
+                }
+            }
+            rest
+        }
+        None => line,
     };
 
     // Handle array notation first (can be combined with type size)
@@ -362,5 +352,77 @@ fn parse_field_line(line: &str) -> DbdField {
         is_key,
         is_relation,
         is_noninline,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DBD: &str = "COLUMNS\n\
+        int ID\n\
+        locstring Name_lang // the name\n\
+        int<Map::ID> MapID\n\
+        float Unverified?\n\n\
+        LAYOUT 0123ABCD\n\
+        BUILD 4.0.0.11927-4.3.4.15595\n\
+        $noninline,id$ID<32>\n\
+        Name_lang\n\n\
+        BUILD 3.3.0.10958, 3.3.5.12340\n\
+        BUILD 3.0.1.8303-3.2.2.10505\n\
+        $id$ID<32>\n\
+        Name_lang\n\
+        MapID<u16>[2]\n\
+        Unverified\n";
+
+    fn build(s: &str) -> GameBuild {
+        s.try_into().unwrap()
+    }
+
+    #[test]
+    fn parses_game_builds() {
+        assert_eq!(
+            build("3.3.5.12340"),
+            GameBuild {
+                major: 3,
+                minor: 3,
+                patch: 5,
+                build: 12340
+            }
+        );
+        for bad in ["3.3.5", "3.3.5.12340.1", "3.x.5.1", ""] {
+            assert!(GameBuild::try_from(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn picks_the_fields_of_the_build() {
+        let dbd = parse_dbd_content(&build("3.3.5.12340"), DBD).unwrap();
+        let names: Vec<_> = dbd.build.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["ID", "Name_lang", "MapID", "Unverified"]);
+        let id = &dbd.build.fields[0];
+        assert!(id.is_key && !id.is_noninline && id.type_size == TypeSize::Int32);
+        let map = &dbd.build.fields[2];
+        assert!(map.is_array && map.array_size == Some(2) && map.type_size == TypeSize::UInt16);
+        let fk = dbd.columns["MapID"].foreign_key.as_ref().unwrap();
+        assert_eq!((fk.table.as_str(), fk.field.as_str()), ("Map", "ID"));
+        assert_eq!(
+            dbd.columns["Name_lang"].comment.as_deref(),
+            Some("the name")
+        );
+        assert!(dbd.columns["Unverified"].is_optional);
+
+        // In a range of the second block's other BUILD line.
+        let dbd = parse_dbd_content(&build("3.1.3.9947"), DBD).unwrap();
+        assert_eq!(dbd.build.fields.len(), 4);
+
+        let dbd = parse_dbd_content(&build("4.3.4.15595"), DBD).unwrap();
+        assert_eq!(dbd.build.fields.len(), 2);
+        assert!(dbd.build.fields[0].is_key && dbd.build.fields[0].is_noninline);
+
+        assert!(matches!(
+            parse_dbd_content(&build("1.12.1.5875"), DBD),
+            Err(Error::NoFieldsForBuild)
+        ));
     }
 }

@@ -54,73 +54,74 @@ impl WowStructR for PhysFile {
         let mut chunks = Vec::new();
         let mut chunk_index = HashMap::new();
 
-        while let Ok(chunk_header) = ChunkHeader::wow_read(reader) {
+        read_chunks(reader, |reader, chunk_header| {
             let (chunk_magic, chunk_data): (&MagicStr, PhysChunk) = match chunk_header.magic {
                 shape::BOXS => (
                     &shape::BOXS,
-                    PhysChunk::ShapeBox(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::ShapeBox(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 shape::CAPS => (
                     &shape::CAPS,
-                    PhysChunk::ShapeCapsule(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::ShapeCapsule(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 shape::SPHS => (
                     &shape::SPHS,
-                    PhysChunk::ShapeSphere(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::ShapeSphere(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 shape::SHAP | shape::SHP2 => (
                     &shape::SHAP,
-                    PhysChunk::Shape(reader.v_wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::Shape(reader.v_wow_read_from_chunk(chunk_header)?),
                 ),
                 body::BODY | body::BDY2 | body::BDY3 | body::BDY4 => (
                     &body::BODY,
-                    PhysChunk::Body(reader.v_wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::Body(reader.v_wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::JOIN => (
                     &joint::JOIN,
-                    PhysChunk::Joint(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::Joint(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::DSTJ => (
                     &joint::DSTJ,
-                    PhysChunk::JointDistance(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::JointDistance(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::PRSJ | joint::PRS2 => (
                     &joint::PRSJ,
-                    PhysChunk::JointPrismatic(reader.v_wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::JointPrismatic(reader.v_wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::REVJ | joint::REV2 => (
                     &joint::REVJ,
-                    PhysChunk::JointRevolute(reader.v_wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::JointRevolute(reader.v_wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::SHOJ | joint::SHJ2 => (
                     &joint::SHOJ,
                     PhysChunk::JointShoulder(joint::JointShoulder::wow_read_from_chunk(
                         reader,
                         phys_version,
-                        &chunk_header,
+                        chunk_header,
                     )?),
                 ),
                 joint::SPHJ => (
                     &joint::SPHJ,
-                    PhysChunk::JointSpherical(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::JointSpherical(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 joint::WELJ | joint::WLJ2 | joint::WLJ3 => (
                     &joint::WELJ,
-                    PhysChunk::JointWeld(reader.v_wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::JointWeld(reader.v_wow_read_from_chunk(chunk_header)?),
                 ),
                 phyt::PHYT => (
                     &phyt::PHYT,
-                    PhysChunk::Phyt(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::Phyt(reader.wow_read_from_chunk(chunk_header)?),
                 ),
                 _ => (
                     &chunk_header.magic,
-                    PhysChunk::Unknown(reader.wow_read_from_chunk(&chunk_header)?),
+                    PhysChunk::Unknown(chunk_header.read_body(reader)?),
                 ),
             };
 
             chunks.push(chunk_data);
             chunk_index.insert(magic_to_inverted_string(chunk_magic), chunks.len() - 1);
-        }
+            Ok(())
+        })?;
 
         Ok(Self {
             header,

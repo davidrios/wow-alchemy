@@ -18,6 +18,22 @@ pub enum WowDataError {
 
     #[error("Invalid value when trying to parse WowEnumFrom: {0} to {1}")]
     InvalidEnumParsedValue(String, String),
+
+    #[error("Invalid magic: expected {expected}, got {actual}")]
+    InvalidMagic { expected: String, actual: String },
+
+    #[error("Missing required chunk {0}")]
+    MissingChunk(String),
+
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+
+    #[error("Chunk {magic} says it has {bytes} bytes, but {available} are there to read")]
+    ChunkOverrun {
+        magic: String,
+        bytes: u32,
+        available: u64,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, WowDataError>;

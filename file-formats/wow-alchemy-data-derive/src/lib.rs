@@ -55,8 +55,8 @@ pub fn wow_header_r_derive(input: TokenStream) -> TokenStream {
 
         quote! {
             impl #impl_generics wow_alchemy_data::types::WowHeaderR for #struct_name #ty_generics #where_clause {
-                fn wow_read<R: Read + Seek>(reader: &mut R) -> wow_alchemy_data::error::Result<Self> {
-                    #ty::wow_read(reader)?.try_into()
+                fn wow_read<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R) -> wow_alchemy_data::error::Result<Self> {
+                    <#ty as wow_alchemy_data::types::WowHeaderR>::wow_read(reader)?.try_into()
                 }
             }
         }
@@ -81,7 +81,7 @@ pub fn wow_header_r_derive(input: TokenStream) -> TokenStream {
 
         quote! {
             impl #impl_generics wow_alchemy_data::types::WowHeaderR for #struct_name #ty_generics #where_clause {
-                fn wow_read<R: Read + Seek>(reader: &mut R) -> wow_alchemy_data::error::Result<Self> {
+                fn wow_read<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R) -> wow_alchemy_data::error::Result<Self> {
                     Ok(#reader_body)
                 }
             }
@@ -111,10 +111,10 @@ fn generate_header_rv_struct_reader_body(
                     read_lines.push(quote! { let #field_name = #val; });
                 } else if wow_data_attrs.versioned {
                     read_lines.push(
-                    quote! { let #field_name: #field_ty = reader.wow_read_versioned(version)?; },
+                    quote! { let #field_name: #field_ty = wow_alchemy_data::types::VWowHeaderR::wow_read(reader, version)?; },
                 );
                 } else {
-                    read_lines.push(quote! { let #field_name: #field_ty = reader.wow_read()?; });
+                    read_lines.push(quote! { let #field_name: #field_ty = wow_alchemy_data::types::WowHeaderR::wow_read(reader)?; });
                 }
 
                 initializers.push(quote! { #field_name });
@@ -134,7 +134,9 @@ fn generate_header_rv_struct_reader_body(
                     "WowHeaderR on structs with unnamed fields only supports bitflags.",
                 ));
             };
-            Ok(quote! {Self::from_bits_retain(reader.wow_read()?)})
+            Ok(
+                quote! {Self::from_bits_retain(wow_alchemy_data::types::WowHeaderR::wow_read(reader)?)},
+            )
         }
         Fields::Unit => Err(syn::Error::new_spanned(
             fields,
@@ -158,14 +160,14 @@ fn generate_header_rv_enum_reader_body(
             }
             syn::Fields::Unnamed(fields) => {
                 let read_fields = fields.unnamed.iter().map(|_| {
-                    quote! { reader.wow_read()? }
+                    quote! { wow_alchemy_data::types::WowHeaderR::wow_read(reader)? }
                 });
                 quote! { Self::#variant_ident(#(#read_fields),*) }
             }
             syn::Fields::Named(fields) => {
                 let field_bindings = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
                 let read_fields =
-                    field_bindings.map(|binding| quote! { #binding: reader.wow_read()? });
+                    field_bindings.map(|binding| quote! { #binding: wow_alchemy_data::types::WowHeaderR::wow_read(reader)? });
                 quote! { Self::#variant_ident{#(#read_fields),*} }
             }
         };
@@ -370,7 +372,7 @@ fn generate_struct_writer_body(
                 } else {
                     let field_name = field.ident.as_ref().unwrap();
                     write_statements.push(quote! {
-                        writer.wow_write(&self.#field_name)?;
+                        wow_alchemy_data::types::WowHeaderW::wow_write(&self.#field_name, writer)?;
                     });
                 }
             }
@@ -388,7 +390,7 @@ fn generate_struct_writer_body(
                 ));
             };
             Ok(quote! {
-                writer.wow_write(&self.bits())?;
+                wow_alchemy_data::types::WowHeaderW::wow_write(&self.bits(), writer)?;
                 Ok(())
             })
         }
@@ -415,7 +417,7 @@ fn generate_struct_size_body(
                 } else {
                     let field_name = field.ident.as_ref().unwrap();
                     size_expressions.push(quote! {
-                        self.#field_name.wow_size()
+                        wow_alchemy_data::types::WowHeaderW::wow_size(&self.#field_name)
                     });
                 }
             }
@@ -432,7 +434,7 @@ fn generate_struct_size_body(
                 ));
             };
             Ok(quote! {
-                #ty::default().wow_size()
+                wow_alchemy_data::types::WowHeaderW::wow_size(&<#ty>::default())
             })
         }
         Fields::Unit => Err(syn::Error::new_spanned(
@@ -448,7 +450,7 @@ fn generate_enum_writer_body(
 ) -> syn::Result<proc_macro2::TokenStream> {
     if let Some(ty) = &struct_wow_attrs.from_type {
         Ok(quote! {
-            #ty::wow_write(&(*self).into(), writer)?;
+            <#ty as wow_alchemy_data::types::WowHeaderW>::wow_write(&(*self).into(), writer)?;
             Ok(())
         })
     } else {
@@ -471,7 +473,7 @@ fn generate_enum_writer_body(
                     let field_bindings_clone = field_bindings.clone();
 
                     let write_calls =
-                        field_bindings.map(|binding| quote! { writer.wow_write(#binding)?; });
+                        field_bindings.map(|binding| quote! { wow_alchemy_data::types::WowHeaderW::wow_write(#binding, writer)?; });
 
                     quote! {
                         Self::#variant_ident(#(#field_bindings_clone),*) => {
@@ -485,7 +487,7 @@ fn generate_enum_writer_body(
                     let field_bindings_clone = field_bindings.clone();
 
                     let write_calls =
-                        field_bindings.map(|binding| quote! { writer.wow_write(#binding)?; });
+                        field_bindings.map(|binding| quote! { wow_alchemy_data::types::WowHeaderW::wow_write(#binding, writer)?; });
 
                     quote! {
                         Self::#variant_ident { #(#field_bindings_clone),* } => {
@@ -511,7 +513,7 @@ fn generate_enum_size_body(
 ) -> syn::Result<proc_macro2::TokenStream> {
     if let Some(ty) = &struct_wow_attrs.from_type {
         Ok(quote! {
-            #ty::wow_size(&(*self).into())
+            <#ty as wow_alchemy_data::types::WowHeaderW>::wow_size(&(*self).into())
         })
     } else {
         let arms = data.variants.iter().map(|variant| {
@@ -531,7 +533,7 @@ fn generate_enum_size_body(
                         .map(|(i, _)| format_ident!("v{}", i));
                     let field_bindings_clone = field_bindings.clone();
 
-                    let size_calls = field_bindings.map(|binding| quote! { #binding.wow_size() });
+                    let size_calls = field_bindings.map(|binding| quote! { wow_alchemy_data::types::WowHeaderW::wow_size(#binding) });
 
                     quote! {
                         Self::#variant_ident(#(#field_bindings_clone),*) => {
@@ -543,7 +545,7 @@ fn generate_enum_size_body(
                     let field_bindings = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
                     let field_bindings_clone = field_bindings.clone();
 
-                    let size_calls = field_bindings.map(|binding| quote! { #binding.wow_size() });
+                    let size_calls = field_bindings.map(|binding| quote! { wow_alchemy_data::types::WowHeaderW::wow_size(#binding) });
 
                     quote! {
                         Self::#variant_ident { #(#field_bindings_clone),* } => {
@@ -603,9 +605,9 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
             initializers.push(quote! { #field_name: #expr });
         } else if wow_data_attrs.versioned {
             initializers
-                .push(quote! { #field_name: reader.v_new_from_header(&header.#field_name)? });
+                .push(quote! { #field_name: wow_alchemy_data::types::VWowDataR::new_from_header(reader, &header.#field_name)? });
         } else {
-            initializers.push(quote! { #field_name: reader.new_from_header(&header.#field_name)? });
+            initializers.push(quote! { #field_name: wow_alchemy_data::types::WowDataR::new_from_header(reader, &header.#field_name)? });
         }
     }
 
@@ -623,7 +625,7 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
     TokenStream::from(match struct_wow_data_attrs.version {
         None => quote! {
             impl #impl_generics wow_alchemy_data::types::WowDataR<#header_ty> for #struct_name #ty_generics #where_clause {
-                fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
+                fn new_from_header<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
                     Ok(Self{
                         #(#initializers),*
                     })
@@ -632,7 +634,7 @@ pub fn wow_data_r_derive(input: TokenStream) -> TokenStream {
         },
         Some(version_ty) => quote! {
             impl #impl_generics wow_alchemy_data::types::VWowDataR<#version_ty, #header_ty> for #struct_name #ty_generics #where_clause {
-                fn new_from_header<R: Read + Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
+                fn new_from_header<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R, header: &#header_ty) -> wow_alchemy_data::error::Result<Self> {
                     Ok(Self{
                         #(#initializers),*
                     })

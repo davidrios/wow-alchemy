@@ -1,7 +1,7 @@
 use wow_alchemy_data::error::{Result as WDResult, WowDataError};
+use wow_alchemy_data::prelude::*;
 use wow_alchemy_data::types::{ChunkHeader, MagicStr, Mat3x4, VersionedChunk};
 use wow_alchemy_data::utils::string_to_inverted_magic;
-use wow_alchemy_data::{prelude::*, v_read_chunk_items};
 use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 
 use super::super::version::PhysVersion;
@@ -120,7 +120,7 @@ impl JointShoulder {
 
         Ok(VersionedChunk {
             version,
-            items: v_read_chunk_items!(reader, version, chunk_header, Self),
+            items: chunk_header.read_records(reader, |r| Self::wow_read(r, version))?,
         })
     }
 }

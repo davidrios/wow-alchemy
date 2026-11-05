@@ -1,6 +1,8 @@
-//! Decoding of MCAL alpha maps in the formats used up to WotLK.
+//! MCAL alpha maps, as stored up to WotLK.
 
-use crate::error::{AdtError, Result};
+use wow_alchemy_data::error::{Result, WowDataError};
+
+use crate::mcnk::{MclyFlags, McnkFlags};
 
 /// Width and height of a decoded alpha map.
 pub const ALPHA_MAP_SIZE: usize = 64;
@@ -8,41 +10,31 @@ pub const ALPHA_MAP_SIZE: usize = 64;
 /// Bytes in a decoded alpha map.
 pub const ALPHA_MAP_BYTES: usize = ALPHA_MAP_SIZE * ALPHA_MAP_SIZE;
 
-/// MCLY flag: the layer has an alpha map.
-pub const MCLY_USE_ALPHA_MAP: u32 = 0x100;
-
-/// MCLY flag: the layer's alpha map is compressed.
-pub const MCLY_ALPHA_COMPRESSED: u32 = 0x200;
-
-/// MCNK flag: 4-bit alpha maps use all 64 rows and columns as stored.
-pub const MCNK_DO_NOT_FIX_ALPHA_MAP: u32 = 0x8000;
-
 /// How one layer's alpha map is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlphaMapFormat {
     /// From the WDT's MPHD `ADT_HAS_BIG_ALPHA` flag: uncompressed maps have 8 bits per pixel.
     pub big_alpha: bool,
-    /// From [`MCLY_ALPHA_COMPRESSED`] on the layer.
+    /// From [`MclyFlags::ALPHA_MAP_COMPRESSED`] on the layer.
     pub compressed: bool,
-    /// From [`MCNK_DO_NOT_FIX_ALPHA_MAP`] on the chunk.
+    /// From [`McnkFlags::DO_NOT_FIX_ALPHA_MAP`] on the chunk.
     pub do_not_fix: bool,
 }
 
 impl AlphaMapFormat {
     /// The format for a layer with `layer_flags` in a chunk with `chunk_flags`.
-    pub fn new(big_alpha: bool, layer_flags: u32, chunk_flags: u32) -> Self {
+    pub fn new(big_alpha: bool, layer_flags: MclyFlags, chunk_flags: McnkFlags) -> Self {
         Self {
             big_alpha,
-            compressed: layer_flags & MCLY_ALPHA_COMPRESSED != 0,
-            do_not_fix: chunk_flags & MCNK_DO_NOT_FIX_ALPHA_MAP != 0,
+            compressed: layer_flags.contains(MclyFlags::ALPHA_MAP_COMPRESSED),
+            do_not_fix: chunk_flags.contains(McnkFlags::DO_NOT_FIX_ALPHA_MAP),
         }
     }
 }
 
 /// Decodes one alpha map to 8 bits per pixel, row by row.
 ///
-/// `data` starts at the layer's offset into the MCAL data and may run past the
-/// end of the map.
+/// `data` starts at the layer's offset into the MCAL data and may run past the end of the map.
 pub fn decode_alpha_map(data: &[u8], format: AlphaMapFormat) -> Result<Vec<u8>> {
     if format.compressed {
         decode_compressed(data)
@@ -55,12 +47,12 @@ pub fn decode_alpha_map(data: &[u8], format: AlphaMapFormat) -> Result<Vec<u8>> 
     }
 }
 
-fn truncated(length: usize) -> AdtError {
-    AdtError::InvalidFileSize(format!("alpha map data is too short: {length} bytes"))
+fn truncated(length: usize) -> WowDataError {
+    WowDataError::InvalidData(format!("alpha map data is too short: {length} bytes"))
 }
 
-/// Run-length encoding: each command byte's low 7 bits are a count. With the
-/// high bit set the next byte repeats, otherwise that many literal bytes follow.
+/// Run-length encoding: each command byte's low 7 bits are a count. With the high bit set the
+/// next byte repeats, otherwise that many literal bytes follow.
 fn decode_compressed(data: &[u8]) -> Result<Vec<u8>> {
     let mut output = Vec::with_capacity(ALPHA_MAP_BYTES);
     let mut position = 0;
@@ -88,8 +80,8 @@ fn decode_compressed(data: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-/// Two pixels per byte, low nibble first. Without `do_not_fix`, the last row
-/// and column repeat their neighbours.
+/// Two pixels per byte, low nibble first. Without `do_not_fix`, the client treats the map as
+/// 63 by 63, so the last row and column repeat their neighbours.
 fn decode_4_bit(data: &[u8], do_not_fix: bool) -> Result<Vec<u8>> {
     let packed = data
         .get(..ALPHA_MAP_BYTES / 2)
@@ -122,6 +114,25 @@ mod tests {
         compressed: false,
         do_not_fix: true,
     };
+
+    #[test]
+    fn format_comes_from_the_flags() {
+        let format = AlphaMapFormat::new(
+            true,
+            MclyFlags::USE_ALPHA_MAP | MclyFlags::ALPHA_MAP_COMPRESSED,
+            McnkFlags::DO_NOT_FIX_ALPHA_MAP,
+        );
+        assert_eq!(
+            format,
+            AlphaMapFormat {
+                big_alpha: true,
+                compressed: true,
+                do_not_fix: true
+            }
+        );
+        let format = AlphaMapFormat::new(false, MclyFlags::USE_ALPHA_MAP, McnkFlags::empty());
+        assert!(!format.compressed && !format.do_not_fix);
+    }
 
     #[test]
     fn four_bit_expands_low_nibble_first() {
@@ -168,7 +179,7 @@ mod tests {
     #[test]
     fn compressed_handles_fills_and_literals_and_stops_at_the_end() {
         let mut data = vec![0x02, 7, 8];
-        // 63 fills of 127 reach 4003 pixels, then the last fill overruns and is clamped.
+        // 32 fills of 127 reach 4066 pixels, then the last fill overruns and is clamped.
         for _ in 0..33 {
             data.extend([0xFF, 9]);
         }

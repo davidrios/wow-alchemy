@@ -1,109 +1,37 @@
 # wow-alchemy CLI
 
-Unified command-line tool for working with World of Warcraft file formats.
-
-<div align="center">
-
-[![Crates.io Version](https://img.shields.io/crates/v/wow-alchemy)](https://crates.io/crates/wow-alchemy)
-[![docs.rs](https://img.shields.io/docsrs/wow-alchemy)](https://docs.rs/wow-alchemy)
-
-</div>
+Command-line tool for World of Warcraft file formats, built on the wow-alchemy crates.
 
 ## Installation
 
-### From crates.io
-
 ```bash
-# Install with all features
-cargo install wow-alchemy
-
-# Or install with specific features only
-cargo install wow-alchemy --features "dbc"
-```
-
-### From Source
-
-```bash
-# Clone the repository
 git clone https://github.com/davidrios/wow-alchemy
 cd wow-alchemy/wow-alchemy
-
-# Build with all features
-cargo build --release
-
-# Or build with specific features only
-cargo build --release --features "dbc"
-
-# The binary will be at target/release/wow-alchemy
-```
-
-### Using Cargo Install (Local)
-
-```bash
-# Install with all formats
 cargo install --path .
-
-# Or with specific formats only
-cargo install --path . --features "blp"
+# or only some formats:
+cargo install --path . --no-default-features --features "blp,adt"
 ```
 
 ## Usage
-
-The `wow-alchemy` CLI provides subcommands for each supported file format:
 
 ```bash
 wow-alchemy <format> <command> [options]
 ```
 
-### Available Formats
+Every `info` command prints a summary, and `--detailed` prints every field read.
 
-- `dbc`
-- `blp`
-- `m2`
-- `wmo`
-- `adt`
-- `wdt`
-- `wdl`
+| Command | What it does |
+|---|---|
+| `adt info <file>` | An ADT terrain tile: chunks, heights, textures, models, liquids |
+| `wdt info <file>`, `wdt tiles <file>` | A map's flags and global WMO; a 64x64 drawing of its tiles |
+| `wdl info <file>`, `wdl tiles <file>` | A map's low-resolution heights and holes |
+| `wmo info <file>` | A WMO root or group file (told apart by its chunks) |
+| `m2 info <file>`, `m2 skin-info <file> --version N`, `m2 phys-info <file>` | M2 models, their skins and physics |
+| `blp info <file>` | A BLP texture's header and mipmaps |
+| `blp convert <in> <out>` | BLP to PNG/TGA/... (`--mipmap-level`), or an image to BLP (`--blp-version`, `--format`, `--alpha-bits`, `--no-mipmaps`) |
+| `dbc convert <build> <folder> <out.sqlite>` | Every DBC in a folder to SQLite, using WoWDBDefs definitions for that build, such as 3.3.5.12340 |
+| `completions <shell>` | Shell completions |
 
-### Global Options
+## License
 
-- `-v, --verbose` - Increase verbosity (can be repeated)
-- `-q, --quiet` - Suppress all output except errors
-- `--help` - Show help for any command
-
-### Shell Completions
-
-Generate shell completions for your shell:
-
-```bash
-# Bash
-wow-alchemy completions bash > ~/.local/share/bash-completion/completions/wow-alchemy
-
-# Zsh
-wow-alchemy completions zsh > ~/.zfunc/_wow-alchemy
-
-# Fish
-wow-alchemy completions fish > ~/.config/fish/completions/wow-alchemy.fish
-
-# PowerShell
-wow-alchemy completions powershell > _wow-alchemy.ps1
-```
-
-## Features
-
-The CLI can be built with different feature flags to include only the formats you
-need:
-
-- `dbc` - DBC database support
-- `blp` - BLP texture support
-- `m2` - M2 model support
-- `wmo` - WMO object support
-- `adt` - ADT terrain support
-- `wdt` - WDT map support
-- `wdl` - WDL world support
-
-
-## Development
-
-See the main [wow-alchemy](https://github.com/davidrios/wow-alchemy) repository
-for development information.
+Apache-2.0

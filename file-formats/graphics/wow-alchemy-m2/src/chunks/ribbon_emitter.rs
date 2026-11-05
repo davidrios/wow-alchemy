@@ -1,6 +1,5 @@
 use crate::chunks::animation::M2AnimationTrackHeader;
 use crate::version::MD20Version;
-use wow_alchemy_data::prelude::*;
 use wow_alchemy_data::types::{C3Vector, Color, WowArray};
 use wow_alchemy_data_derive::{WowDataR, WowHeaderR, WowHeaderW};
 

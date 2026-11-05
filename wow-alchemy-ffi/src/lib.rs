@@ -6,13 +6,12 @@
 
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
-use std::io::Cursor;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::Mutex;
 
 use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image};
-use wow_alchemy_blp::parser::load_blp_from_buf;
+use wow_alchemy_blp::load_blp_from_buf;
 use wow_alchemy_cdbc::WdbFile;
 use wow_alchemy_mpq::PatchChain;
 
@@ -59,15 +58,7 @@ pub struct WaImage {
 
 pub struct WaMpqChain(Mutex<PatchChain>);
 
-pub struct WaDbc {
-    data: Vec<u8>,
-    records_start: usize,
-    strings_start: usize,
-    string_block_size: usize,
-    record_count: u32,
-    field_count: u32,
-    record_size: u32,
-}
+pub struct WaDbc(WdbFile);
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
@@ -280,21 +271,8 @@ pub unsafe extern "C" fn wa_blp_to_bc1(
 pub unsafe extern "C" fn wa_dbc_open(data: *const u8, len: usize) -> *mut WaDbc {
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
-        let file = WdbFile::wow_read(&mut Cursor::new(bytes)).map_err(|e| e.to_string())?;
-        let header = &file.header;
-        let records_start = file.records_start_offset() as usize;
-        let strings_start =
-            header.record_count as usize * header.record_size as usize + records_start;
-        let dbc = WaDbc {
-            data: bytes.to_vec(),
-            records_start,
-            strings_start,
-            string_block_size: header.string_block_size as usize,
-            record_count: header.record_count,
-            field_count: header.field_count,
-            record_size: header.record_size,
-        };
-        Ok(Box::into_raw(Box::new(dbc)))
+        let file = WdbFile::from_bytes(bytes).map_err(|e| e.to_string())?;
+        Ok(Box::into_raw(Box::new(WaDbc(file))))
     })
 }
 
@@ -312,39 +290,11 @@ pub unsafe extern "C" fn wa_dbc_info(
     field_count: *mut u32,
     record_size: *mut u32,
 ) {
-    let dbc = unsafe { &*dbc };
+    let dbc = &unsafe { &*dbc }.0;
     unsafe {
-        record_count.write(dbc.record_count);
-        field_count.write(dbc.field_count);
-        record_size.write(dbc.record_size);
-    }
-}
-
-impl WaDbc {
-    fn field(&self, record: u32, field: u32) -> Option<u32> {
-        let offset_in_record = field as usize * 4;
-        if record >= self.record_count || offset_in_record + 4 > self.record_size as usize {
-            return None;
-        }
-        let start =
-            self.records_start + record as usize * self.record_size as usize + offset_in_record;
-        let bytes = self.data.get(start..start + 4)?;
-        Some(u32::from_le_bytes(bytes.try_into().ok()?))
-    }
-
-    /// Reads the block directly because offsets may point into the middle of a
-    /// string, where writers share common suffixes.
-    fn string(&self, offset: u32) -> Option<&[u8]> {
-        let offset = offset as usize;
-        if offset >= self.string_block_size {
-            return None;
-        }
-        let block = self
-            .data
-            .get(self.strings_start..self.strings_start + self.string_block_size)?;
-        let rest = &block[offset..];
-        let end = rest.iter().position(|b| *b == 0).unwrap_or(rest.len());
-        Some(&rest[..end])
+        record_count.write(dbc.record_count());
+        field_count.write(dbc.field_count());
+        record_size.write(dbc.record_size());
     }
 }
 
@@ -355,7 +305,7 @@ pub unsafe extern "C" fn wa_dbc_get_u32(
     field: u32,
     out: *mut u32,
 ) -> WaStatus {
-    match unsafe { &*dbc }.field(record, field) {
+    match unsafe { &*dbc }.0.field_u32(record, field) {
         Some(value) => {
             unsafe { out.write(value) };
             WaStatus::Ok
@@ -372,11 +322,7 @@ pub unsafe extern "C" fn wa_dbc_get_string(
     out: *mut *const u8,
     out_len: *mut usize,
 ) -> WaStatus {
-    let dbc = unsafe { &*dbc };
-    match dbc
-        .field(record, field)
-        .and_then(|offset| dbc.string(offset))
-    {
+    match unsafe { &*dbc }.0.field_string(record, field) {
         Some(text) => {
             unsafe {
                 out.write(text.as_ptr());

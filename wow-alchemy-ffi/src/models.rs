@@ -3,31 +3,33 @@
 use std::io::Cursor;
 use std::ptr;
 
+use wow_alchemy_blp::BlpFormat;
 use wow_alchemy_blp::convert::blp_to_image;
-use wow_alchemy_blp::parser::load_blp_from_buf;
-use wow_alchemy_blp::types::BlpContent;
+use wow_alchemy_blp::load_blp_from_buf;
 use wow_alchemy_data::prelude::{WowHeaderR, WowHeaderW};
-use wow_alchemy_data::types::{C3Vector, VWowStructR, WowStructR};
 use wow_alchemy_data::types::C2Vector;
+use wow_alchemy_data::types::{C3Vector, VWowStructR, WowStructR};
+use wow_alchemy_m2::chunks::M2Vertex;
+use wow_alchemy_m2::chunks::animation::{
+    M2AnimationBlending, M2AnimationFlags, M2AnimationTiming, M2AnimationTrackHeader, TrackArray,
+};
 use wow_alchemy_m2::chunks::animation::{M2AnimationTrackData, TrackVec};
+use wow_alchemy_m2::chunks::bone::{M2BoneHeader, M2BoneRotationHeader};
+use wow_alchemy_m2::chunks::color_animation::M2ColorAnimationHeader;
 use wow_alchemy_m2::chunks::particle_emitter::{
     M2ParticleEmitter, M2ParticleEmitterBlending, M2ParticleEmitterColorAnimation,
     M2ParticleEmitterEmissionRateVary, M2ParticleEmitterHeader, M2ParticleEmitterLifespanVary,
     M2ParticleEmitterMultiTextureParam,
 };
-use wow_alchemy_m2::md20::MD20Model;
-use wow_alchemy_m2::chunks::M2Vertex;
-use wow_alchemy_m2::chunks::animation::{
-    M2AnimationBlending, M2AnimationFlags, M2AnimationTiming, M2AnimationTrackHeader, TrackArray,
-};
-use wow_alchemy_m2::chunks::bone::{M2BoneHeader, M2BoneRotationHeader};
-use wow_alchemy_m2::chunks::color_animation::M2ColorAnimationHeader;
 use wow_alchemy_m2::chunks::texture_transform::M2TextureTransformHeader;
 use wow_alchemy_m2::chunks::transparency_animation::M2TransparencyAnimationHeader;
 use wow_alchemy_m2::header::{M2ModelFlags, M2TextureCombinerCombos};
+use wow_alchemy_m2::md20::MD20Model;
 use wow_alchemy_m2::skin::SkinVersion;
 use wow_alchemy_m2::{M2Model, Skin};
-use wow_alchemy_wmo::render::{RenderGroup, RenderLiquid, RenderRoot};
+use wow_alchemy_wmo::group::{GroupHeader, WmoGroup};
+use wow_alchemy_wmo::liquid::WmoLiquid;
+use wow_alchemy_wmo::root::{DoodadNames, RootFlags, WmoRoot};
 
 use crate::{WaBuffer, WaStatus, bytes_arg, guard};
 
@@ -250,7 +252,7 @@ pub struct WaM2 {
     emitters: Vec<WaM2Emitter>,
     /// Each emitter's on and off keys, by sequence, and the global sequence they loop on (-1 for
     /// none), in the order of `emitters`.
-    emitter_switches: Vec<(TrackVec<u32>, TrackVec<u8>, i16)>,
+    emitter_switches: Vec<EmitterSwitches>,
     sequences: Vec<WaM2Sequence>,
     global_sequences: Vec<u32>,
     attachments: Vec<WaM2Attachment>,
@@ -694,12 +696,17 @@ fn three_keys<T: Copy>(keys: &[T], fallback: T) -> [T; 3] {
     [at(0), at(1), at(2)]
 }
 
-fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVec<u8>, i16))> {
+/// An emitter's `enabled_in` track: its times and values per sequence, and its global sequence.
+type EmitterSwitches = (TrackVec<u32>, TrackVec<u8>, i16);
+
+fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, EmitterSwitches)> {
     md20.particle_emitter_headers
         .iter()
         .zip(&md20.particle_emitters)
         .filter_map(|(header, data)| {
-            let (M2ParticleEmitterHeader::PreCata(header), M2ParticleEmitter::PreCata(data)) = (header, data) else {
+            let (M2ParticleEmitterHeader::PreCata(header), M2ParticleEmitter::PreCata(data)) =
+                (header, data)
+            else {
                 return None;
             };
             let M2ParticleEmitterColorAnimation::Later {
@@ -713,12 +720,23 @@ fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVe
                 return None;
             };
             let (blend, emitter_type) = match header.blending_type {
-                M2ParticleEmitterBlending::Vanilla { blending_type, emitter_type } => (blending_type as u32, emitter_type as u32),
-                M2ParticleEmitterBlending::Later { blending_type, emitter_type, .. } => (blending_type as u32, emitter_type as u32),
+                M2ParticleEmitterBlending::Vanilla {
+                    blending_type,
+                    emitter_type,
+                } => (blending_type as u32, emitter_type as u32),
+                M2ParticleEmitterBlending::Later {
+                    blending_type,
+                    emitter_type,
+                    ..
+                } => (blending_type as u32, emitter_type as u32),
             };
             let particle_type = match header.multi_texture_param {
-                M2ParticleEmitterMultiTextureParam::PreCata { particle_type, .. } => particle_type as u32,
-                M2ParticleEmitterMultiTextureParam::AfterCata(particle_type) => particle_type as u32,
+                M2ParticleEmitterMultiTextureParam::PreCata { particle_type, .. } => {
+                    particle_type as u32
+                }
+                M2ParticleEmitterMultiTextureParam::AfterCata(particle_type) => {
+                    particle_type as u32
+                }
             };
             let vary = |lifespan: bool| match (&header.lifespan_vary, &header.emission_rate_vary) {
                 (M2ParticleEmitterLifespanVary::Some(v), _) if lifespan => *v,
@@ -726,7 +744,11 @@ fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVe
                 _ => 0.0,
             };
             let float = |track: &M2AnimationTrackData<f32>| first_key(&track.values).unwrap_or(0.0);
-            let white = C3Vector { x: 255.0, y: 255.0, z: 255.0 };
+            let white = C3Vector {
+                x: 255.0,
+                y: 255.0,
+                z: 255.0,
+            };
             let colors = three_keys(&color_animation.values, white);
             let alphas = three_keys(&alpha_animation.values, 32767);
             let sizes = three_keys(&scale_animation.values, C2Vector { x: 1.0, y: 1.0 });
@@ -734,41 +756,61 @@ fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVe
                 .timestamps
                 .get(1)
                 .map_or(0.5, |t| (*t as f32 / 32767.0).clamp(0.01, 0.99));
-            let switches = (data.enabled_in.timestamps.clone(), data.enabled_in.values.clone(), header.enabled_in.global_sequence);
-            Some((WaM2Emitter {
-                flags: header.flags.bits(),
-                position: [header.position.x, header.position.y, header.position.z],
-                bone: header.bone_index as i32,
-                texture: header.texture_index as u32,
-                blend,
-                emitter_type,
-                particle_type,
-                rows: header.texture_dimension_rows.max(1) as u32,
-                columns: header.texture_dimension_cols.max(1) as u32,
-                speed: float(&data.emission_speed),
-                speed_variation: float(&data.speed_variation),
-                vertical_range: float(&data.vertical_range),
-                horizontal_range: float(&data.horizontal_range),
-                gravity: float(&data.gravity),
-                lifespan: float(&data.lifespan),
-                lifespan_variation: vary(true),
-                rate: float(&data.emission_rate),
-                rate_variation: vary(false),
-                area_length: float(&data.emission_area_length),
-                area_width: float(&data.emission_area_width),
-                mid,
-                colors: [
-                    colors[0].x, colors[0].y, colors[0].z,
-                    colors[1].x, colors[1].y, colors[1].z,
-                    colors[2].x, colors[2].y, colors[2].z,
-                ],
-                alphas: alphas.map(|a| a as f32 / 32767.0),
-                sizes: sizes.map(|s| s.x),
-                enabled: first_key(&data.enabled_in.values).map_or(1, |v| v as u32),
-                cell_count: head_cell_animation.values.len().min(4) as u32,
-                cell_times: std::array::from_fn(|i| head_cell_animation.timestamps.get(i).map_or(1.0, |t| *t as f32 / 32767.0)),
-                cell_values: std::array::from_fn(|i| head_cell_animation.values.get(i).map_or(0.0, |v| *v as f32)),
-            }, switches))
+            let switches = (
+                data.enabled_in.timestamps.clone(),
+                data.enabled_in.values.clone(),
+                header.enabled_in.global_sequence,
+            );
+            Some((
+                WaM2Emitter {
+                    flags: header.flags.bits(),
+                    position: [header.position.x, header.position.y, header.position.z],
+                    bone: header.bone_index as i32,
+                    texture: header.texture_index as u32,
+                    blend,
+                    emitter_type,
+                    particle_type,
+                    rows: header.texture_dimension_rows.max(1) as u32,
+                    columns: header.texture_dimension_cols.max(1) as u32,
+                    speed: float(&data.emission_speed),
+                    speed_variation: float(&data.speed_variation),
+                    vertical_range: float(&data.vertical_range),
+                    horizontal_range: float(&data.horizontal_range),
+                    gravity: float(&data.gravity),
+                    lifespan: float(&data.lifespan),
+                    lifespan_variation: vary(true),
+                    rate: float(&data.emission_rate),
+                    rate_variation: vary(false),
+                    area_length: float(&data.emission_area_length),
+                    area_width: float(&data.emission_area_width),
+                    mid,
+                    colors: [
+                        colors[0].x,
+                        colors[0].y,
+                        colors[0].z,
+                        colors[1].x,
+                        colors[1].y,
+                        colors[1].z,
+                        colors[2].x,
+                        colors[2].y,
+                        colors[2].z,
+                    ],
+                    alphas: alphas.map(|a| a as f32 / 32767.0),
+                    sizes: sizes.map(|s| s.x),
+                    enabled: first_key(&data.enabled_in.values).map_or(1, |v| v as u32),
+                    cell_count: head_cell_animation.values.len().min(4) as u32,
+                    cell_times: std::array::from_fn(|i| {
+                        head_cell_animation
+                            .timestamps
+                            .get(i)
+                            .map_or(1.0, |t| *t as f32 / 32767.0)
+                    }),
+                    cell_values: std::array::from_fn(|i| {
+                        head_cell_animation.values.get(i).map_or(0.0, |v| *v as f32)
+                    }),
+                },
+                switches,
+            ))
         })
         .collect()
 }
@@ -777,7 +819,9 @@ fn store_emitters(md20: &MD20Model) -> Vec<(WaM2Emitter, (TrackVec<u32>, TrackVe
 fn sequence_keys<T>(track: &TrackVec<T>, sequence: usize) -> &[T] {
     match track {
         TrackVec::Single(keys) => keys,
-        TrackVec::Multiple(sequences) => sequences.get(sequence).map_or(&[], |keys| keys.as_slice()),
+        TrackVec::Multiple(sequences) => {
+            sequences.get(sequence).map_or(&[], |keys| keys.as_slice())
+        }
     }
 }
 
@@ -797,12 +841,18 @@ pub unsafe extern "C" fn wa_m2_emitter_switches(
     global: *mut i32,
 ) -> u32 {
     let model = unsafe { &*model };
-    let Some((track_times, track_values, global_sequence)) = model.emitter_switches.get(emitter as usize) else {
+    let Some((track_times, track_values, global_sequence)) =
+        model.emitter_switches.get(emitter as usize)
+    else {
         return 0;
     };
 
     // A global sequence's keys sit in the first slot, whatever sequence plays.
-    let slot = if *global_sequence >= 0 { 0 } else { sequence as usize };
+    let slot = if *global_sequence >= 0 {
+        0
+    } else {
+        sequence as usize
+    };
     if !global.is_null() {
         unsafe { global.write(*global_sequence as i32) };
     }
@@ -826,7 +876,11 @@ pub unsafe extern "C" fn wa_m2_emitter_count(model: *const WaM2) -> u32 {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wa_m2_emitter(model: *const WaM2, index: u32, out: *mut WaM2Emitter) -> WaStatus {
+pub unsafe extern "C" fn wa_m2_emitter(
+    model: *const WaM2,
+    index: u32,
+    out: *mut WaM2Emitter,
+) -> WaStatus {
     match unsafe { &*model }.emitters.get(index as usize) {
         Some(emitter) => {
             unsafe { out.write(*emitter) };
@@ -1307,19 +1361,24 @@ pub struct WaWmoDoodad {
 }
 
 pub struct WaWmo {
-    root: RenderRoot,
+    root: WmoRoot,
+    textures: Vec<String>,
+    doodad_names: DoodadNames,
+    portal_vertices: Vec<[f32; 3]>,
 }
 
 pub struct WaWmoGroup {
     mesh: StoredMesh,
     doodad_refs: Vec<u16>,
     bounds: [f32; 6],
-    portal_start: u32,
-    transition_batch_count: u32,
-    portal_count: u32,
-    flags: u32,
-    liquid: Option<RenderLiquid>,
-    group_liquid: u32,
+    header: GroupHeader,
+    liquid: Option<StoredLiquid>,
+}
+
+struct StoredLiquid {
+    liquid: WmoLiquid,
+    heights: Vec<f32>,
+    cells: Vec<u8>,
 }
 
 /// A group's liquid surface, on a grid in the WMO's own space.
@@ -1337,12 +1396,25 @@ pub struct WaWmoLiquid {
     pub liquid_type: u32,
 }
 
+fn vec3(v: &C3Vector) -> [f32; 3] {
+    [v.x, v.y, v.z]
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_open(data: *const u8, len: usize) -> *mut WaWmo {
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
-        let root = RenderRoot::parse(bytes).map_err(|e| e.to_string())?;
-        Ok(Box::into_raw(Box::new(WaWmo { root })))
+        let root = WmoRoot::wow_read(&mut Cursor::new(bytes)).map_err(|e| e.to_string())?;
+        Ok(Box::into_raw(Box::new(WaWmo {
+            textures: root
+                .materials
+                .iter()
+                .map(|m| root.texture(m.texture_1))
+                .collect(),
+            doodad_names: root.doodad_names(),
+            portal_vertices: root.portal_vertices.iter().map(vec3).collect(),
+            root,
+        })))
     })
 }
 
@@ -1355,21 +1427,21 @@ pub unsafe extern "C" fn wa_wmo_free(wmo: *mut WaWmo) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_flags(wmo: *const WaWmo) -> u32 {
-    unsafe { &*wmo }.root.flags
+    unsafe { &*wmo }.root.header.flags.bits() as u32
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_group_count(wmo: *const WaWmo) -> u32 {
-    unsafe { &*wmo }.root.group_count
+    unsafe { &*wmo }.root.header.group_count
 }
 
 /// Writes 6 floats: the minimum corner, then the maximum, in the WMO's own space.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_bounds(wmo: *const WaWmo, out: *mut f32) {
-    let root = &unsafe { &*wmo }.root;
+    let bounds = &unsafe { &*wmo }.root.header.bounding_box;
     let out = unsafe { std::slice::from_raw_parts_mut(out, 6) };
-    out[..3].copy_from_slice(&root.bounds_min);
-    out[3..].copy_from_slice(&root.bounds_max);
+    out[..3].copy_from_slice(&vec3(&bounds.min));
+    out[3..].copy_from_slice(&vec3(&bounds.max));
 }
 
 #[unsafe(no_mangle)]
@@ -1385,14 +1457,15 @@ pub unsafe extern "C" fn wa_wmo_material(
     texture: *mut *const u8,
     texture_len: *mut usize,
 ) -> WaStatus {
-    match unsafe { &*wmo }.root.materials.get(index as usize) {
+    let wmo = unsafe { &*wmo };
+    match wmo.root.materials.get(index as usize) {
         Some(material) => unsafe {
             out.write(WaWmoMaterial {
-                flags: material.flags,
+                flags: material.flags.bits(),
                 blend_mode: material.blend_mode,
                 shader: material.shader,
             });
-            write_name(Some(&material.texture), texture, texture_len)
+            write_name(wmo.textures.get(index as usize), texture, texture_len)
         },
         None => WaStatus::NotFound,
     }
@@ -1434,13 +1507,15 @@ pub unsafe extern "C" fn wa_wmo_doodad(
     index: u32,
     out: *mut WaWmoDoodad,
 ) -> WaStatus {
-    match unsafe { &*wmo }.root.doodads.get(index as usize) {
+    let wmo = unsafe { &*wmo };
+    match wmo.root.doodads.get(index as usize) {
         Some(doodad) => {
+            let r = &doodad.rotation;
             unsafe {
                 out.write(WaWmoDoodad {
-                    name: doodad.name,
-                    position: doodad.position,
-                    rotation: doodad.rotation,
+                    name: wmo.doodad_names.indexes[index as usize],
+                    position: vec3(&doodad.position),
+                    rotation: [r.x, r.y, r.z, r.w],
                     scale: doodad.scale,
                     color: doodad.color,
                 })
@@ -1458,43 +1533,58 @@ pub unsafe extern "C" fn wa_wmo_doodad_name(
     out: *mut *const u8,
     out_len: *mut usize,
 ) -> WaStatus {
-    unsafe { write_name((&*wmo).root.doodad_names.get(index as usize), out, out_len) }
+    let names = &unsafe { &*wmo }.doodad_names.names;
+    unsafe { write_name(names.get(index as usize), out, out_len) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_group_open(data: *const u8, len: usize) -> *mut WaWmoGroup {
     guard(ptr::null_mut(), || {
         let bytes = unsafe { bytes_arg(data, len) }?;
-        let mut group = RenderGroup::parse(bytes).map_err(|e| e.to_string())?;
-        let liquid = group.liquid.take();
+        let mut group = WmoGroup::wow_read(&mut Cursor::new(bytes)).map_err(|e| e.to_string())?;
+        group.check_mesh().map_err(|e| e.to_string())?;
         let widen = |indices: &[u16]| indices.iter().map(|&i| i as u32).collect::<Vec<_>>();
         let mesh = StoredMesh {
             indices: widen(&group.indices),
-            collision_indices: widen(&group.collision_indices),
+            collision_indices: widen(&group.collision_indices()),
             batches: group
                 .batches
                 .iter()
                 .map(|b| WaBatch {
                     index_start: b.index_start,
-                    index_count: b.index_count,
-                    material: b.material,
+                    index_count: b.index_count as u32,
+                    material: b.material as u32,
                 })
                 .collect(),
-            positions: group.positions,
-            normals: group.normals,
-            tex_coords: group.tex_coords,
-            colors: group.colors,
+            positions: group.positions.iter().map(vec3).collect(),
+            normals: group.normals.iter().map(vec3).collect(),
+            tex_coords: group
+                .first_tex_coords()
+                .iter()
+                .map(|v| [v.x, v.y])
+                .collect(),
+            colors: group.colors_rgba(),
         };
+        let bounds = &group.header.bounding_box;
+        let bounds = [
+            bounds.min.x,
+            bounds.min.y,
+            bounds.min.z,
+            bounds.max.x,
+            bounds.max.y,
+            bounds.max.z,
+        ];
+        let liquid = group.liquid.take().map(|liquid| StoredLiquid {
+            heights: liquid.heights(),
+            cells: liquid.liquid_cells(),
+            liquid,
+        });
         Ok(Box::into_raw(Box::new(WaWmoGroup {
             mesh,
-            doodad_refs: group.doodad_refs,
-            bounds: group.bounds,
-            portal_start: group.portal_start,
-            transition_batch_count: group.transition_batch_count,
-            portal_count: group.portal_count,
-            flags: group.flags,
+            doodad_refs: group.doodad_refs().to_vec(),
+            bounds,
+            header: group.header,
             liquid,
-            group_liquid: group.group_liquid,
         })))
     })
 }
@@ -1555,8 +1645,8 @@ pub unsafe extern "C" fn wa_wmo_portal_vertices(
 ) {
     let wmo = unsafe { &*wmo };
     unsafe {
-        out.write(wmo.root.portal_vertices.as_ptr().cast());
-        count.write(wmo.root.portal_vertices.len() as u32);
+        out.write(wmo.portal_vertices.as_ptr().cast());
+        count.write(wmo.portal_vertices.len() as u32);
     }
 }
 
@@ -1577,8 +1667,8 @@ pub unsafe extern "C" fn wa_wmo_portal(
                 out.write(WaWmoPortal {
                     start: p.start as u32,
                     count: p.count as u32,
-                    normal: [p.normal.x, p.normal.y, p.normal.z],
-                    offset: p.offset,
+                    normal: vec3(&p.plane.normal),
+                    offset: p.plane.distance,
                 })
             };
             WaStatus::Ok
@@ -1626,28 +1716,28 @@ pub unsafe extern "C" fn wa_wmo_group_portal_refs(
     start: *mut u32,
     count: *mut u32,
 ) {
-    let group = unsafe { &*group };
+    let header = &unsafe { &*group }.header;
     unsafe {
-        start.write(group.portal_start);
-        count.write(group.portal_count);
+        start.write(header.portal_start as u32);
+        count.write(header.portal_count as u32);
     }
 }
 
 /// How many of the mesh's batches, from the first, are transition batches.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_group_transition_batch_count(group: *const WaWmoGroup) -> u32 {
-    unsafe { &*group }.transition_batch_count
+    unsafe { &*group }.header.transition_batch_count as u32
 }
 
 /// The WMO's ambient color, as stored: 0xAARRGGBB.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_ambient_color(wmo: *const WaWmo) -> u32 {
-    unsafe { &*wmo }.root.ambient_color
+    unsafe { &*wmo }.root.header.ambient_color
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_wmo_group_flags(group: *const WaWmoGroup) -> u32 {
-    unsafe { &*group }.flags
+    unsafe { &*group }.header.flags.bits()
 }
 
 /// Whether the group has liquid. `root_flags` comes from wa_wmo_flags, because the root decides
@@ -1659,22 +1749,33 @@ pub unsafe extern "C" fn wa_wmo_group_liquid(
     out: *mut WaWmoLiquid,
 ) -> WaStatus {
     let group = unsafe { &*group };
-    match &group.liquid {
-        Some(liquid) => {
-            unsafe {
-                out.write(WaWmoLiquid {
-                    vertices_x: liquid.vertices_x,
-                    vertices_y: liquid.vertices_y,
-                    corner: liquid.corner,
-                    heights: liquid.heights.as_ptr(),
-                    cells: liquid.cells.as_ptr(),
-                    liquid_type: liquid.liquid_type(root_flags, group.flags, group.group_liquid),
-                })
-            };
-            WaStatus::Ok
-        }
-        None => WaStatus::NotFound,
-    }
+    let Some(stored) = &group.liquid else {
+        return WaStatus::NotFound;
+    };
+    let liquid = &stored.liquid;
+    // A grid without cells reads as no grid at all.
+    let (vertices_x, vertices_y, corner) = if liquid.has_grid() {
+        let h = &liquid.header;
+        (h.vertices_x, h.vertices_y, vec3(&h.corner))
+    } else {
+        (0, 0, [0.0; 3])
+    };
+    let liquid_type = liquid.liquid_type(
+        RootFlags::from_bits_retain(root_flags as u16),
+        group.header.flags,
+        group.header.group_liquid,
+    );
+    unsafe {
+        out.write(WaWmoLiquid {
+            vertices_x,
+            vertices_y,
+            corner,
+            heights: stored.heights.as_ptr(),
+            cells: stored.cells.as_ptr(),
+            liquid_type,
+        })
+    };
+    WaStatus::Ok
 }
 
 // ---- Textures ----
@@ -1692,11 +1793,11 @@ pub struct WaGpuTexture {
 /// A texture's whole compressed chain, if it has one the GPU can use as it is.
 fn compressed_chain(data: &[u8]) -> Result<Option<WaGpuTexture>, String> {
     let blp = load_blp_from_buf(data).map_err(|e| e.to_string())?;
-    let (images, format, block_bytes) = match &blp.content {
+    let (format, block_bytes) = match blp.format() {
         // One-bit alpha needs decoding, because GPU DXT1 formats may ignore it.
-        BlpContent::Dxt1(c) if blp.header.alpha_bits() == 0 => (&c.images, WA_GPU_DXT1, 8),
-        BlpContent::Dxt3(c) => (&c.images, WA_GPU_DXT3, 16),
-        BlpContent::Dxt5(c) => (&c.images, WA_GPU_DXT5, 16),
+        Ok(BlpFormat::Dxt1) if blp.header.alpha_bits() == 0 => (WA_GPU_DXT1, 8),
+        Ok(BlpFormat::Dxt3) => (WA_GPU_DXT3, 16),
+        Ok(BlpFormat::Dxt5) => (WA_GPU_DXT5, 16),
         _ => return Ok(None),
     };
 
@@ -1710,9 +1811,10 @@ fn compressed_chain(data: &[u8]) -> Result<Option<WaGpuTexture>, String> {
     for level in 0..levels {
         let blocks = ((width >> level).max(1) as usize).div_ceil(4)
             * ((height >> level).max(1) as usize).div_ceil(4);
-        match images
+        match blp
+            .mipmaps
             .get(level as usize)
-            .and_then(|image| image.content.get(..blocks * block_bytes))
+            .and_then(|mipmap| mipmap.get(..blocks * block_bytes))
         {
             Some(data) => pixels.extend_from_slice(data),
             None => return Ok(None),

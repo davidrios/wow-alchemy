@@ -1,237 +1,113 @@
 use super::error::Error;
-use super::mipmap::generate_mipmaps;
+use super::generate_mipmaps;
 use super::palette::*;
-use crate::types::*;
-use ::image::{DynamicImage, RgbImage, RgbaImage, imageops::FilterType};
+use crate::file::Palette;
+use crate::header::BlpHeader;
+use ::image::{DynamicImage, RgbaImage, imageops::FilterType};
 
+/// Decodes a palettized level: an index per pixel, then the alpha packed at `alpha_bits` per
+/// pixel from the lowest bits of each byte up, scaled to 0..=255.
 pub fn raw1_to_image(
     header: &BlpHeader,
-    image: &BlpRaw1,
-    mipmap_level: usize,
+    palette: &Palette,
+    bytes: &[u8],
+    level: usize,
 ) -> Result<DynamicImage, Error> {
-    if mipmap_level >= image.images.len() {
-        return Err(Error::MissingImage(mipmap_level));
+    let alpha_bits = header.alpha_bits();
+    if ![0, 1, 4, 8].contains(&alpha_bits) {
+        return Err(Error::Raw1InvalidAlphaBits(alpha_bits));
     }
-    if image.cmap.len() != 256 {
-        return Err(Error::ColorMapLengthInvalid(image.cmap.len()));
-    }
-    let raw_image = &image.images[mipmap_level];
-    let (width, height) = header.mipmap_size(mipmap_level);
-    if (width as usize) * (height as usize) != raw_image.indexed_rgb.len() {
-        return Err(Error::MismatchSizes(
-            mipmap_level,
+    let (width, height) = header.mipmap_size(level);
+    let pixels = width as usize * height as usize;
+    let needed = pixels + (pixels * alpha_bits as usize).div_ceil(8);
+    if bytes.len() < needed {
+        return Err(Error::MipmapTooShort {
+            level,
             width,
             height,
-            raw_image.indexed_rgb.len(),
-        ));
+            needed,
+            actual: bytes.len(),
+        });
     }
-    let alpha_bits = header.alpha_bits();
-    if alpha_bits == 0 {
-        let mut res_image = RgbImage::new(width, height);
-        for (i, pixel) in res_image.pixels_mut().enumerate() {
-            let ci = raw_image.indexed_rgb[i];
-            let color = image.cmap[ci as usize];
-            pixel.0[0] = ((color >> 16) & 0xFF) as u8;
-            pixel.0[1] = ((color >> 8) & 0xFF) as u8;
-            pixel.0[2] = (color & 0xFF) as u8;
-        }
-        Ok(DynamicImage::ImageRgb8(res_image))
-    } else if alpha_bits == 1 {
-        let alpha_values = raw_image.indexed_alpha.len() * 8;
-        // > as there can be padding bits
-        if (width as usize) * (height as usize) > alpha_values {
-            return Err(Error::MismatchSizes(
-                mipmap_level,
-                width,
-                height,
-                raw_image.indexed_rgb.len(),
-            ));
-        }
+    let (indices, alpha) = bytes.split_at(pixels);
 
-        let mut res_image = RgbaImage::new(width, height);
-        for (i, pixel) in res_image.pixels_mut().enumerate() {
-            let ci = raw_image.indexed_rgb[i];
-            let color = image.cmap[ci as usize];
-            pixel.0[0] = ((color >> 16) & 0xFF) as u8;
-            pixel.0[1] = ((color >> 8) & 0xFF) as u8;
-            pixel.0[2] = (color & 0xFF) as u8;
-            pixel.0[3] = ((raw_image.indexed_alpha[i / 8] >> (i % 8)) & 0x01) * 0xFF;
-        }
-        Ok(DynamicImage::ImageRgba8(res_image))
-    } else if alpha_bits == 4 {
-        let alpha_values = raw_image.indexed_alpha.len() * 2;
-
-        // > as there can be padding bits
-        if (width as usize) * (height as usize) > alpha_values {
-            return Err(Error::MismatchSizes(
-                mipmap_level,
-                width,
-                height,
-                raw_image.indexed_rgb.len(),
-            ));
-        }
-
-        let mut res_image = RgbaImage::new(width, height);
-        for (i, pixel) in res_image.pixels_mut().enumerate() {
-            let ci = raw_image.indexed_rgb[i];
-            let color = image.cmap[ci as usize];
-            pixel.0[0] = ((color >> 16) & 0xFF) as u8;
-            pixel.0[1] = ((color >> 8) & 0xFF) as u8;
-            pixel.0[2] = (color & 0xFF) as u8;
-            let alpha_block = raw_image.indexed_alpha[i / 2];
-            let nibble = if i % 2 == 0 {
-                alpha_block & 0x0F
-            } else {
-                alpha_block >> 4
-            };
-            pixel.0[3] = nibble * 17;
-        }
-        Ok(DynamicImage::ImageRgba8(res_image))
-    } else if alpha_bits == 8 {
-        let alpha_values = raw_image.indexed_alpha.len();
-
-        if (width as usize) * (height as usize) != alpha_values {
-            return Err(Error::MismatchSizes(
-                mipmap_level,
-                width,
-                height,
-                raw_image.indexed_rgb.len(),
-            ));
-        }
-
-        let mut res_image = RgbaImage::new(width, height);
-        for (i, pixel) in res_image.pixels_mut().enumerate() {
-            let ci = raw_image.indexed_rgb[i];
-            let color = image.cmap[ci as usize];
-            pixel.0[0] = ((color >> 16) & 0xFF) as u8;
-            pixel.0[1] = ((color >> 8) & 0xFF) as u8;
-            pixel.0[2] = (color & 0xFF) as u8;
-            pixel.0[3] = raw_image.indexed_alpha[i];
-        }
-        Ok(DynamicImage::ImageRgba8(res_image))
+    let mut image = RgbaImage::new(width, height);
+    for (i, pixel) in image.pixels_mut().enumerate() {
+        let color = palette[indices[i] as usize];
+        let a = match alpha_bits {
+            1 => ((alpha[i / 8] >> (i % 8)) & 0x01) * 0xFF,
+            4 => ((alpha[i / 2] >> (i % 2 * 4)) & 0x0F) * 17,
+            8 => alpha[i],
+            _ => 0xFF,
+        };
+        pixel.0 = [(color >> 16) as u8, (color >> 8) as u8, color as u8, a];
+    }
+    Ok(if alpha_bits == 0 {
+        DynamicImage::ImageRgb8(DynamicImage::ImageRgba8(image).into_rgb8())
     } else {
-        Err(Error::Raw1InvalidAlphaBits(alpha_bits))
-    }
+        DynamicImage::ImageRgba8(image)
+    })
 }
 
+/// Quantizes the image and its mipmaps to one palette. Each level is the indices followed by
+/// the alpha.
 pub fn image_to_raw1(
     image: DynamicImage,
     alpha_bits: u32,
     make_mipmaps: bool,
     mipmap_filter: FilterType,
-) -> Result<BlpRaw1, Error> {
-    let mut raw_images = if make_mipmaps {
-        generate_mipmaps(image, mipmap_filter)?.into_iter()
-    } else {
-        vec![image].into_iter()
-    };
+) -> Result<(Palette, Vec<Vec<u8>>), Error> {
+    let levels = generate_mipmaps(image, make_mipmaps, mipmap_filter);
+    let mut levels = levels.into_iter().map(DynamicImage::into_rgba8);
 
-    let mut images = vec![];
-
-    // Create quantized image from the first image.
-    let root_image = raw_images
-        .next()
-        .ok_or(Error::MissingImage(0))?
-        .into_rgba8();
-    let indexed_alpha = index_alpha(&root_image, alpha_bits)?;
-    let (root_quantized, mut cmap, nq) = quantize_rgba(root_image)?;
-    if cmap.len() != 255 {
-        return Err(Error::PaletteWrongSize(cmap.len()));
+    let root = levels.next().ok_or(Error::MissingImage(0))?;
+    let root_alpha = index_alpha(&root, alpha_bits)?;
+    let (mut root_indices, colors, nq) = quantize_rgba(root);
+    if colors.len() != 255 {
+        return Err(Error::PaletteWrongSize(colors.len()));
     }
+    // The last of the 256 entries isn't used.
+    let mut palette = [0; 256];
+    palette[..255].copy_from_slice(&colors);
+    root_indices.extend(root_alpha);
 
-    // A palette is always 256 entries in the file, and the last isn't used.
-    cmap.push(0);
-    images.push(Raw1Image {
-        indexed_rgb: root_quantized,
-        indexed_alpha,
-    });
-
-    // Quantize mipmaps
-    for image in raw_images {
-        let rgba = image.into_rgba8();
-        let indexed_alpha = index_alpha(&rgba, alpha_bits)?;
-        let quantized = quantize_rgba_known(rgba, &nq)?;
-        images.push(Raw1Image {
-            indexed_rgb: quantized,
-            indexed_alpha,
-        });
+    let mut mipmaps = vec![root_indices];
+    for level in levels {
+        let alpha = index_alpha(&level, alpha_bits)?;
+        let mut indices = quantize_rgba_known(level, &nq);
+        indices.extend(alpha);
+        mipmaps.push(indices);
     }
-
-    Ok(BlpRaw1 { cmap, images })
-}
-
-fn index_alpha_1bit(image: &RgbaImage) -> Vec<u8> {
-    let pixels_number = (image.width() as usize) * (image.height() as usize);
-    let alpha_values = ((pixels_number as f64) / 8.0).ceil() as usize;
-    let mut res = Vec::with_capacity(alpha_values);
-    if pixels_number > 0 {
-        let mut bits = 0;
-        let mut i = 0;
-        res.push(0);
-        for pixel in image.pixels() {
-            if bits >= 8 {
-                bits = 0;
-                i += 1;
-                res.push(0);
-            }
-            res[i] |= if pixel[3] > 0 { 1 << bits } else { 0 };
-            bits += 1;
-        }
-    }
-
-    res
-}
-
-fn index_alpha_4bit(image: &RgbaImage) -> Vec<u8> {
-    let pixels_number = (image.width() as usize) * (image.height() as usize);
-    let alpha_values = ((pixels_number as f64) / 2.0).ceil() as usize;
-    let mut res = Vec::with_capacity(alpha_values);
-    if pixels_number > 0 {
-        let mut bits = 0;
-        let mut i = 0;
-        res.push(0);
-        for pixel in image.pixels() {
-            if bits >= 8 {
-                bits = 0;
-                i += 1;
-                res.push(0);
-            }
-            let scaled_alpha = ((pixel[3] as u32 * 15 + 127) / 255) as u8;
-            res[i] |= scaled_alpha << bits;
-            bits += 4;
-        }
-    }
-
-    res
-}
-
-fn index_alpha_8bit(image: &RgbaImage) -> Vec<u8> {
-    let pixels_number = (image.width() as usize) * (image.height() as usize);
-    let mut res = Vec::with_capacity(pixels_number);
-    for pixel in image.pixels() {
-        res.push(pixel[3]);
-    }
-    res
+    Ok((palette, mipmaps))
 }
 
 fn index_alpha(image: &RgbaImage, alpha_bits: u32) -> Result<Vec<u8>, Error> {
-    if alpha_bits == 0 {
-        Ok(vec![])
-    } else if alpha_bits == 1 {
-        Ok(index_alpha_1bit(image))
-    } else if alpha_bits == 4 {
-        Ok(index_alpha_4bit(image))
-    } else if alpha_bits == 8 {
-        Ok(index_alpha_8bit(image))
-    } else {
-        Err(Error::Raw1InvalidAlphaBits(alpha_bits))
-    }
+    let alphas = image.pixels().map(|pixel| pixel[3]);
+    Ok(match alpha_bits {
+        0 => vec![],
+        8 => alphas.collect(),
+        1 | 4 => {
+            let bits = alpha_bits as usize;
+            let per_byte = 8 / bits;
+            let mut packed = vec![0; (image.len() / 4).div_ceil(per_byte)];
+            for (i, alpha) in alphas.enumerate() {
+                let value = if bits == 1 {
+                    (alpha > 0) as u8
+                } else {
+                    ((alpha as u32 * 15 + 127) / 255) as u8
+                };
+                packed[i / per_byte] |= value << (i % per_byte * bits);
+            }
+            packed
+        }
+        _ => return Err(Error::Raw1InvalidAlphaBits(alpha_bits)),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::types::*;
+    use crate::file::{BlpData, BlpImage};
     use ::image::{DynamicImage, Rgba, RgbaImage, imageops::FilterType};
 
     fn palettized(color: [u8; 4], alpha_bits: AlphaBits) -> BlpImage {
@@ -246,8 +122,8 @@ mod tests {
     }
 
     fn palette(blp: &BlpImage) -> &[u32] {
-        match &blp.content {
-            BlpContent::Raw1(raw) => &raw.cmap,
+        match &blp.data {
+            BlpData::Palette(palette) => palette,
             _ => panic!("not palettized"),
         }
     }
@@ -256,21 +132,55 @@ mod tests {
     #[test]
     fn palette_entries_are_bgr() {
         let blp = palettized([200, 20, 10, 255], AlphaBits::Bit8);
-        let red = palette(&blp).iter().copied().find(|c| c & 0xFFFFFF != 0).unwrap();
-        assert!((red >> 16) & 0xFF > 150, "red should be the high byte: {red:08X}");
+        let red = palette(&blp)
+            .iter()
+            .copied()
+            .find(|c| c & 0xFFFFFF != 0)
+            .unwrap();
+        assert!(
+            (red >> 16) & 0xFF > 150,
+            "red should be the high byte: {red:08X}"
+        );
         assert!(red & 0xFF < 50, "blue should be the low byte: {red:08X}");
 
-        let pixel = blp_to_image(&blp, 0).unwrap().into_rgba8().get_pixel(3, 3).0;
+        let pixel = blp_to_image(&blp, 0)
+            .unwrap()
+            .into_rgba8()
+            .get_pixel(3, 3)
+            .0;
         assert!(pixel[0] > 150 && pixel[2] < 50, "decoded {pixel:?}");
     }
 
     #[test]
+    fn palettes_have_256_entries_and_the_last_is_unused() {
+        let blp = palettized([90, 90, 90, 255], AlphaBits::NoAlpha);
+        assert_eq!(palette(&blp).len(), 256);
+        assert_eq!(palette(&blp)[255], 0);
+        // 64 indices and no alpha.
+        assert_eq!(blp.mipmaps[0].len(), 64);
+    }
+
+    #[test]
     fn low_bit_alphas_scale_to_eight_bits() {
-        let opaque = blp_to_image(&palettized([90, 90, 90, 255], AlphaBits::Bit1), 0).unwrap().into_rgba8();
+        let opaque = blp_to_image(&palettized([90, 90, 90, 255], AlphaBits::Bit1), 0)
+            .unwrap()
+            .into_rgba8();
         assert_eq!(opaque.get_pixel(0, 0).0[3], 255);
 
-        let half = blp_to_image(&palettized([90, 90, 90, 136], AlphaBits::Bit4), 0).unwrap().into_rgba8();
+        let half = blp_to_image(&palettized([90, 90, 90, 136], AlphaBits::Bit4), 0)
+            .unwrap()
+            .into_rgba8();
         assert_eq!(half.get_pixel(0, 0).0[3], 136);
         assert_eq!(half.get_pixel(1, 0).0[3], 136);
+    }
+
+    #[test]
+    fn short_levels_are_an_error() {
+        let mut blp = palettized([90, 90, 90, 255], AlphaBits::Bit8);
+        blp.mipmaps[0].pop();
+        assert!(matches!(
+            blp_to_image(&blp, 0),
+            Err(Error::MipmapTooShort { .. })
+        ));
     }
 }

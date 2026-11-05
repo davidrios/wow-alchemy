@@ -1,502 +1,504 @@
-//! MPQ header structures and parsing
+//! The user data header (`MPQ\x1B`) and the archive header (`MPQ\x1A`), versions 1 to 4.
 
-use crate::security::{SecurityLimits, validate_header_security};
+use std::io::{Read, Seek, SeekFrom, Write};
+
+use wow_alchemy_data::error::Result as WDResult;
+use wow_alchemy_data::prelude::*;
+use wow_alchemy_data::types::MagicStr;
+use wow_alchemy_data_derive::{WowEnumFrom, WowHeaderR, WowHeaderW};
+
 use crate::{Error, Result};
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{Read, Seek, SeekFrom};
 
-use crate::debug::{format_size, hex_string};
+/// Magic of the archive header.
+pub const MPQ_MAGIC: MagicStr = *b"MPQ\x1A";
+/// Magic of the user data header.
+pub const USER_DATA_MAGIC: MagicStr = *b"MPQ\x1B";
 
-/// MPQ archive header signature ('MPQ\x1A')
-pub const MPQ_HEADER_SIGNATURE: u32 = 0x1A51504D;
-
-/// MPQ user data header signature ('MPQ\x1B')
-pub const MPQ_USERDATA_SIGNATURE: u32 = 0x1B51504D;
-
-/// Header alignment requirement (512 bytes)
+/// Archive headers start at multiples of this many bytes.
 pub const HEADER_ALIGNMENT: u64 = 0x200;
 
-/// MPQ format version
-#[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Format version of an archive.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, WowEnumFrom, WowHeaderR, WowHeaderW,
+)]
+#[wow_data(from_type = u16)]
 pub enum FormatVersion {
-    /// Version 1 - Original format (32-byte header)
-    V1 = 0,
-    /// Version 2 - Burning Crusade (44-byte header)
-    V2 = 1,
-    /// Version 3 - Cataclysm Beta (68-byte header)
-    V3 = 2,
-    /// Version 4 - Cataclysm+ (208-byte header)
-    V4 = 3,
+    /// The original format, with a 32-byte header.
+    #[default]
+    #[wow_data(expr = 0)]
+    V1,
+    /// The Burning Crusade's: 44 bytes, adding the hi-block table and 64-bit table offsets.
+    #[wow_data(expr = 1)]
+    V2,
+    /// Cataclysm beta's: 68 bytes, adding a 64-bit archive size and the HET and BET tables.
+    #[wow_data(expr = 2)]
+    V3,
+    /// Cataclysm's: 208 bytes, adding stored table sizes and MD5s.
+    #[wow_data(expr = 3)]
+    V4,
 }
+
+impl DataVersion for FormatVersion {}
 
 impl FormatVersion {
-    /// Get the header size for this version
-    pub fn header_size(&self) -> u32 {
+    /// Size of this version's header.
+    pub fn header_size(self) -> u32 {
         match self {
-            FormatVersion::V1 => 0x20, // 32 bytes
-            FormatVersion::V2 => 0x2C, // 44 bytes
-            FormatVersion::V3 => 0x44, // 68 bytes
-            FormatVersion::V4 => 0xD0, // 208 bytes
+            FormatVersion::V1 => 0x20,
+            FormatVersion::V2 => 0x2C,
+            FormatVersion::V3 => 0x44,
+            FormatVersion::V4 => 0xD0,
         }
     }
 
-    /// Create from raw version number
-    pub fn from_raw(raw: u16) -> Option<Self> {
-        match raw {
-            0 => Some(FormatVersion::V1),
-            1 => Some(FormatVersion::V2),
-            2 => Some(FormatVersion::V3),
-            3 => Some(FormatVersion::V4),
-            _ => None,
+    fn previous(self) -> Self {
+        match self {
+            FormatVersion::V4 => FormatVersion::V3,
+            FormatVersion::V3 => FormatVersion::V2,
+            _ => FormatVersion::V1,
         }
     }
 }
 
-/// MPQ user data header (optional, appears before main header)
-#[derive(Debug, Clone)]
+/// The header that may come before the archive, as in Starcraft II maps.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
 pub struct UserDataHeader {
-    /// Maximum size of the user data
+    /// `MPQ\x1B`.
+    pub magic: MagicStr,
+    /// Bytes reserved for user data.
     pub user_data_size: u32,
-    /// Offset of the MPQ header, relative to the beginning of this header
+    /// Offset of the archive header from this header.
     pub header_offset: u32,
-    /// Size of user data header (commonly used in SC2 maps)
+    /// Bytes of user data that follow this header.
     pub user_data_header_size: u32,
 }
 
-/// Main MPQ header structure
-#[derive(Debug, Clone)]
-pub struct MpqHeader {
-    /// Size of the archive header
+/// Fields of the header every version has.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+pub struct MpqHeaderV1 {
+    /// `MPQ\x1A`.
+    pub magic: MagicStr,
+    /// Size of the header in bytes.
     pub header_size: u32,
-    /// Size of MPQ archive (deprecated in v2+)
+    /// Size of the archive (superseded by the 64-bit size in v3).
     pub archive_size: u32,
-    /// Format version
+    /// Format version.
     pub format_version: FormatVersion,
-    /// Block size (power of two exponent)
+    /// Sector size as a power of two times 512.
     pub block_size: u16,
-    /// Offset to the hash table
+    /// Offset of the hash table from the archive start (low 32 bits).
     pub hash_table_pos: u32,
-    /// Offset to the block table
+    /// Offset of the block table from the archive start (low 32 bits).
     pub block_table_pos: u32,
-    /// Number of entries in the hash table
+    /// Entries in the hash table.
     pub hash_table_size: u32,
-    /// Number of entries in the block table
+    /// Entries in the block table.
     pub block_table_size: u32,
-
-    // Version 2+ fields
-    /// Extended block table position
-    pub hi_block_table_pos: Option<u64>,
-    /// High 16 bits of hash table offset
-    pub hash_table_pos_hi: Option<u16>,
-    /// High 16 bits of block table offset
-    pub block_table_pos_hi: Option<u16>,
-
-    // Version 3+ fields
-    /// 64-bit archive size
-    pub archive_size_64: Option<u64>,
-    /// Position of BET table
-    pub bet_table_pos: Option<u64>,
-    /// Position of HET table
-    pub het_table_pos: Option<u64>,
-
-    // Version 4 fields
-    /// Compressed sizes and MD5 hashes
-    pub v4_data: Option<MpqHeaderV4Data>,
 }
 
-/// Version 4 specific header data
-#[derive(Debug, Clone)]
-pub struct MpqHeaderV4Data {
-    /// Compressed size of hash table
+/// Fields added in version 2.
+#[derive(Debug, Clone, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+pub struct MpqHeaderV2 {
+    /// Offset of the hi-block table, or 0.
+    pub hi_block_table_pos: u64,
+    /// High 16 bits of the hash table offset.
+    pub hash_table_pos_hi: u16,
+    /// High 16 bits of the block table offset.
+    pub block_table_pos_hi: u16,
+}
+
+/// Fields added in version 3.
+#[derive(Debug, Clone, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+pub struct MpqHeaderV3 {
+    /// 64-bit size of the archive.
+    pub archive_size_64: u64,
+    /// Offset of the BET table, or 0.
+    pub bet_table_pos: u64,
+    /// Offset of the HET table, or 0.
+    pub het_table_pos: u64,
+}
+
+/// Fields added in version 4.
+#[derive(Debug, Clone, Default, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+pub struct MpqHeaderV4 {
+    /// Stored (maybe compressed) size of the hash table.
     pub hash_table_size_64: u64,
-    /// Compressed size of block table
+    /// Stored size of the block table.
     pub block_table_size_64: u64,
-    /// Compressed size of hi-block table
+    /// Stored size of the hi-block table.
     pub hi_block_table_size_64: u64,
-    /// Compressed size of HET table
+    /// Stored size of the HET table.
     pub het_table_size_64: u64,
-    /// Compressed size of BET table
+    /// Stored size of the BET table.
     pub bet_table_size_64: u64,
-    /// Size of raw data chunk for MD5
+    /// Size of the chunks whose MD5s follow each file's data.
     pub raw_chunk_size: u32,
-    /// MD5 of block table
+    /// MD5 of the stored block table.
     pub md5_block_table: [u8; 16],
-    /// MD5 of hash table
+    /// MD5 of the stored hash table.
     pub md5_hash_table: [u8; 16],
-    /// MD5 of hi-block table
+    /// MD5 of the stored hi-block table.
     pub md5_hi_block_table: [u8; 16],
-    /// MD5 of BET table
+    /// MD5 of the stored BET table.
     pub md5_bet_table: [u8; 16],
-    /// MD5 of HET table
+    /// MD5 of the stored HET table.
     pub md5_het_table: [u8; 16],
-    /// MD5 of MPQ header
+    /// MD5 of the header up to this field.
     pub md5_mpq_header: [u8; 16],
 }
 
+/// The version 2 fields, when the header has them.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+#[wow_data(version = FormatVersion)]
+pub enum SinceV2 {
+    /// Not in this header.
+    None,
+    /// The fields.
+    #[wow_data(read_if = version >= FormatVersion::V2)]
+    Some(MpqHeaderV2),
+}
+
+/// The version 3 fields, when the header has them.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+#[wow_data(version = FormatVersion)]
+pub enum SinceV3 {
+    /// Not in this header.
+    None,
+    /// The fields.
+    #[wow_data(read_if = version >= FormatVersion::V3)]
+    Some(MpqHeaderV3),
+}
+
+/// The version 4 fields, when the header has them.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+#[wow_data(version = FormatVersion)]
+pub enum SinceV4 {
+    /// Not in this header.
+    None,
+    /// The fields.
+    #[wow_data(read_if = version >= FormatVersion::V4)]
+    Some(MpqHeaderV4),
+}
+
+/// The fields that follow [`MpqHeaderV1`], by the layout the header has.
+#[derive(Debug, Clone, PartialEq, Eq, WowHeaderR, WowHeaderW)]
+#[wow_data(version = FormatVersion)]
+pub struct MpqHeaderExt {
+    /// Version 2 fields.
+    #[wow_data(versioned)]
+    pub v2: SinceV2,
+    /// Version 3 fields.
+    #[wow_data(versioned)]
+    pub v3: SinceV3,
+    /// Version 4 fields.
+    #[wow_data(versioned)]
+    pub v4: SinceV4,
+}
+
+/// An archive header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MpqHeader {
+    /// Fields of every version.
+    pub base: MpqHeaderV1,
+    /// Fields of later versions.
+    pub ext: MpqHeaderExt,
+}
+
 impl MpqHeader {
-    /// Read an MPQ header from the given reader with security validation
-    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        Self::read_with_limits(reader, &SecurityLimits::default())
+    /// The layout to read, by version and header size: Storm accepts headers shorter than
+    /// their version's, and v3 headers long enough to hold the v4 fields have them.
+    pub fn layout(base: &MpqHeaderV1) -> FormatVersion {
+        let mut layout = base.format_version;
+        while layout > FormatVersion::V1 && base.header_size < layout.header_size() {
+            layout = layout.previous();
+        }
+        if layout == FormatVersion::V3 && base.header_size >= FormatVersion::V4.header_size() {
+            layout = FormatVersion::V4;
+        }
+        layout
     }
 
-    /// Read an MPQ header with custom security limits
-    pub fn read_with_limits<R: Read + Seek>(
-        reader: &mut R,
-        limits: &SecurityLimits,
-    ) -> Result<Self> {
-        // Read the signature
-        let signature = reader.read_u32::<LittleEndian>()?;
-        if signature != MPQ_HEADER_SIGNATURE {
-            return Err(Error::invalid_format("Invalid MPQ header signature"));
-        }
-
-        // Remember where the header starts (after signature)
-        let header_start = reader.stream_position()? - 4;
-
-        // Read basic header fields
-        let header_size = reader.read_u32::<LittleEndian>()?;
-        let archive_size = reader.read_u32::<LittleEndian>()?;
-        let format_version_raw = reader.read_u16::<LittleEndian>()?;
-        let block_size = reader.read_u16::<LittleEndian>()?;
-        let hash_table_pos = reader.read_u32::<LittleEndian>()?;
-        let block_table_pos = reader.read_u32::<LittleEndian>()?;
-        let hash_table_size = reader.read_u32::<LittleEndian>()?;
-        let block_table_size = reader.read_u32::<LittleEndian>()?;
-
-        let format_version = FormatVersion::from_raw(format_version_raw)
-            .ok_or(Error::UnsupportedVersion(format_version_raw))?;
-
-        // Security validation - validate header before proceeding
-        validate_header_security(
-            signature,
-            header_size,
-            archive_size,
-            format_version_raw,
-            block_size,
-            hash_table_pos,
-            block_table_pos,
-            hash_table_size,
-            block_table_size,
-            limits,
-        )?;
-
-        // Validate header size
-        if header_size < format_version.header_size() {
-            return Err(Error::invalid_format(format!(
-                "Header size {header_size} too small for version {format_version:?}"
-            )));
-        }
-
-        let mut header = MpqHeader {
-            header_size,
-            archive_size,
-            format_version,
-            block_size,
-            hash_table_pos,
-            block_table_pos,
-            hash_table_size,
-            block_table_size,
-            hi_block_table_pos: None,
-            hash_table_pos_hi: None,
-            block_table_pos_hi: None,
-            archive_size_64: None,
-            bet_table_pos: None,
-            het_table_pos: None,
-            v4_data: None,
-        };
-
-        // Read version-specific fields
-        if format_version >= FormatVersion::V2 {
-            // Version 2+ fields
-            header.hi_block_table_pos = Some(reader.read_u64::<LittleEndian>()?);
-            header.hash_table_pos_hi = Some(reader.read_u16::<LittleEndian>()?);
-            header.block_table_pos_hi = Some(reader.read_u16::<LittleEndian>()?);
-        }
-
-        if format_version >= FormatVersion::V3 {
-            // Version 3+ fields
-            header.archive_size_64 = Some(reader.read_u64::<LittleEndian>()?);
-            header.bet_table_pos = Some(reader.read_u64::<LittleEndian>()?);
-            header.het_table_pos = Some(reader.read_u64::<LittleEndian>()?);
-        }
-
-        // Check if we have V4 data based on header size
-        // Some V3 archives have 208-byte headers with V4 data
-        if format_version >= FormatVersion::V3 && header_size >= 208 {
-            // First check if we have enough data to read V4 fields
-            let current_pos = reader.stream_position()?;
-            let remaining_header = (header_start + header_size as u64).saturating_sub(current_pos);
-            let v4_data_size = 8 * 5 + 4 + 16 * 6; // 5 u64s + 1 u32 + 6 MD5s
-
-            if remaining_header < v4_data_size as u64 {
-                log::warn!(
-                    "Header size is 208 but not enough space for V4 data. Remaining: {remaining_header}, needed: {v4_data_size}"
-                );
-            } else {
-                // Version 4 fields
-                let mut v4_data = MpqHeaderV4Data {
-                    hash_table_size_64: reader.read_u64::<LittleEndian>()?,
-                    block_table_size_64: reader.read_u64::<LittleEndian>()?,
-                    hi_block_table_size_64: reader.read_u64::<LittleEndian>()?,
-                    het_table_size_64: reader.read_u64::<LittleEndian>()?,
-                    bet_table_size_64: reader.read_u64::<LittleEndian>()?,
-                    raw_chunk_size: reader.read_u32::<LittleEndian>()?,
-                    md5_block_table: [0; 16],
-                    md5_hash_table: [0; 16],
-                    md5_hi_block_table: [0; 16],
-                    md5_bet_table: [0; 16],
-                    md5_het_table: [0; 16],
-                    md5_mpq_header: [0; 16],
-                };
-
-                reader.read_exact(&mut v4_data.md5_block_table)?;
-                reader.read_exact(&mut v4_data.md5_hash_table)?;
-                reader.read_exact(&mut v4_data.md5_hi_block_table)?;
-                reader.read_exact(&mut v4_data.md5_bet_table)?;
-                reader.read_exact(&mut v4_data.md5_het_table)?;
-                reader.read_exact(&mut v4_data.md5_mpq_header)?;
-
-                header.v4_data = Some(v4_data);
-            }
-        }
-
-        Ok(header)
-    }
-
-    /// Get the actual archive size (using 64-bit value if available)
-    pub fn get_archive_size(&self) -> u64 {
-        self.archive_size_64.unwrap_or(self.archive_size as u64)
-    }
-
-    /// Get the full hash table position
-    pub fn get_hash_table_pos(&self) -> u64 {
-        if let Some(hi) = self.hash_table_pos_hi {
-            ((hi as u64) << 32) | (self.hash_table_pos as u64)
-        } else {
-            self.hash_table_pos as u64
+    /// Version 2 fields, if present.
+    pub fn v2(&self) -> Option<&MpqHeaderV2> {
+        match &self.ext.v2 {
+            SinceV2::Some(v2) => Some(v2),
+            SinceV2::None => None,
         }
     }
 
-    /// Get the full block table position
-    pub fn get_block_table_pos(&self) -> u64 {
-        if let Some(hi) = self.block_table_pos_hi {
-            ((hi as u64) << 32) | (self.block_table_pos as u64)
-        } else {
-            self.block_table_pos as u64
+    /// Version 3 fields, if present.
+    pub fn v3(&self) -> Option<&MpqHeaderV3> {
+        match &self.ext.v3 {
+            SinceV3::Some(v3) => Some(v3),
+            SinceV3::None => None,
         }
     }
 
-    /// Calculate the sector size from block size
+    /// Version 4 fields, if present.
+    pub fn v4(&self) -> Option<&MpqHeaderV4> {
+        match &self.ext.v4 {
+            SinceV4::Some(v4) => Some(v4),
+            SinceV4::None => None,
+        }
+    }
+
+    /// Format version.
+    pub fn format_version(&self) -> FormatVersion {
+        self.base.format_version
+    }
+
+    /// Size of one sector.
     pub fn sector_size(&self) -> usize {
-        512 << self.block_size
+        512usize << self.base.block_size
+    }
+
+    /// Size of the archive, from the 64-bit field when there is one.
+    pub fn archive_size(&self) -> u64 {
+        self.v3()
+            .map_or(self.base.archive_size as u64, |v3| v3.archive_size_64)
+    }
+
+    /// Offset of the hash table from the archive start.
+    pub fn hash_table_pos(&self) -> u64 {
+        let hi = self.v2().map_or(0, |v2| v2.hash_table_pos_hi);
+        ((hi as u64) << 32) | self.base.hash_table_pos as u64
+    }
+
+    /// Offset of the block table from the archive start.
+    pub fn block_table_pos(&self) -> u64 {
+        let hi = self.v2().map_or(0, |v2| v2.block_table_pos_hi);
+        ((hi as u64) << 32) | self.base.block_table_pos as u64
+    }
+
+    /// Offset of the hi-block table, if there is one.
+    pub fn hi_block_table_pos(&self) -> Option<u64> {
+        self.v2()
+            .map(|v2| v2.hi_block_table_pos)
+            .filter(|&pos| pos != 0)
+    }
+
+    /// Offset of the HET table, if there is one.
+    pub fn het_table_pos(&self) -> Option<u64> {
+        self.v3().map(|v3| v3.het_table_pos).filter(|&pos| pos != 0)
+    }
+
+    /// Offset of the BET table, if there is one.
+    pub fn bet_table_pos(&self) -> Option<u64> {
+        self.v3().map(|v3| v3.bet_table_pos).filter(|&pos| pos != 0)
     }
 }
 
-/// Find the MPQ header in a file
-pub fn find_header<R: Read + Seek>(
-    reader: &mut R,
-) -> Result<(u64, Option<UserDataHeader>, MpqHeader)> {
-    find_header_with_limits(reader, &SecurityLimits::default())
+impl WowHeaderR for MpqHeader {
+    fn wow_read<R: Read + Seek>(reader: &mut R) -> WDResult<Self> {
+        let base: MpqHeaderV1 = reader.wow_read()?;
+        let ext = reader.wow_read_versioned(Self::layout(&base))?;
+        Ok(Self { base, ext })
+    }
 }
 
-/// Find MPQ header with custom security limits
-pub fn find_header_with_limits<R: Read + Seek>(
-    reader: &mut R,
-    limits: &SecurityLimits,
-) -> Result<(u64, Option<UserDataHeader>, MpqHeader)> {
-    let mut offset = 0u64;
+impl WowHeaderW for MpqHeader {
+    fn wow_write<W: Write>(&self, writer: &mut W) -> WDResult<()> {
+        self.base.wow_write(writer)?;
+        self.ext.wow_write(writer)
+    }
+
+    fn wow_size(&self) -> usize {
+        self.base.wow_size() + self.ext.wow_size()
+    }
+}
+
+/// Where an archive was found in its file.
+#[derive(Debug, Clone)]
+pub struct HeaderLocation {
+    /// Offset of the archive header in the file; table and file offsets count from here.
+    pub archive_offset: u64,
+    /// The user data header in front of it, if any.
+    pub user_data: Option<UserDataHeader>,
+    /// The archive header.
+    pub header: MpqHeader,
+}
+
+/// Finds the archive header: at a multiple of 512 bytes, directly or through a user data
+/// header.
+pub fn find_header<R: Read + Seek>(reader: &mut R) -> Result<HeaderLocation> {
     let file_size = reader.seek(SeekFrom::End(0))?;
-    reader.seek(SeekFrom::Start(0))?;
-
-    loop {
-        if offset >= file_size {
-            return Err(Error::invalid_format("No MPQ header found"));
-        }
-
+    let mut offset = 0u64;
+    while offset + 4 <= file_size {
         reader.seek(SeekFrom::Start(offset))?;
-
-        // Try to read a signature
-        let signature = match reader.read_u32::<LittleEndian>() {
-            Ok(sig) => sig,
-            Err(_) => {
-                offset += HEADER_ALIGNMENT;
-                continue;
-            }
-        };
-
-        match signature {
-            MPQ_HEADER_SIGNATURE => {
-                // Found standard MPQ header
-                reader.seek(SeekFrom::Start(offset))?;
-                let header = MpqHeader::read_with_limits(reader, limits)?;
-                return Ok((offset, None, header));
-            }
-            MPQ_USERDATA_SIGNATURE => {
-                // Found user data header
-                let user_data_size = reader.read_u32::<LittleEndian>()?;
-                let header_offset = reader.read_u32::<LittleEndian>()?;
-                let user_data_header_size = reader.read_u32::<LittleEndian>()?;
-
-                let user_data = UserDataHeader {
-                    user_data_size,
-                    header_offset,
-                    user_data_header_size,
-                };
-
-                // Calculate actual header position
-                let mpq_offset = offset + header_offset as u64;
-                if mpq_offset < file_size {
-                    reader.seek(SeekFrom::Start(mpq_offset))?;
-
-                    // Verify there's an MPQ header at the calculated position
-                    let mpq_sig = reader.read_u32::<LittleEndian>()?;
-                    if mpq_sig == MPQ_HEADER_SIGNATURE {
-                        reader.seek(SeekFrom::Start(mpq_offset))?;
-                        let header = MpqHeader::read_with_limits(reader, limits)?;
-                        return Ok((mpq_offset, Some(user_data), header));
-                    }
+        let magic: MagicStr = reader.wow_read()?;
+        if magic == MPQ_MAGIC {
+            reader.seek(SeekFrom::Start(offset))?;
+            return Ok(HeaderLocation {
+                archive_offset: offset,
+                user_data: None,
+                header: read_header(reader)?,
+            });
+        }
+        if magic == USER_DATA_MAGIC && offset + 16 <= file_size {
+            reader.seek(SeekFrom::Start(offset))?;
+            let user_data: UserDataHeader = reader.wow_read()?;
+            let archive_offset = offset + user_data.header_offset as u64;
+            if archive_offset + 4 <= file_size {
+                reader.seek(SeekFrom::Start(archive_offset))?;
+                let magic: MagicStr = reader.wow_read()?;
+                if magic == MPQ_MAGIC {
+                    reader.seek(SeekFrom::Start(archive_offset))?;
+                    return Ok(HeaderLocation {
+                        archive_offset,
+                        user_data: Some(user_data),
+                        header: read_header(reader)?,
+                    });
                 }
             }
-            _ => {}
         }
-
-        // Move to next potential header position
         offset += HEADER_ALIGNMENT;
     }
+    Err(Error::invalid_format("No MPQ header found"))
 }
 
-impl MpqHeader {
-    /// Debug dump the MPQ header
-    pub fn debug_dump(&self) -> String {
-        let mut output = String::new();
-        output.push_str("MPQ Header Debug Dump\n");
-        output.push_str("====================\n");
-        output.push_str(&format!("Header Size: {}\n", self.header_size));
-        output.push_str(&format!(
-            "Archive Size (v1): {}\n",
-            format_size(self.archive_size as u64)
-        ));
-        output.push_str(&format!(
-            "Format Version: {:?} (v{})\n",
-            self.format_version,
-            self.format_version as u16 + 1
-        ));
-        output.push_str(&format!(
-            "Block Size: {} (sector size: {})\n",
-            self.block_size,
-            format_size((512 << self.block_size) as u64)
-        ));
-        output.push_str(&format!(
-            "Hash Table: offset=0x{:08X}, size={} entries\n",
-            self.hash_table_pos, self.hash_table_size
-        ));
-        output.push_str(&format!(
-            "Block Table: offset=0x{:08X}, size={} entries\n",
-            self.block_table_pos, self.block_table_size
-        ));
-
-        if let Some(hi_pos) = self.hi_block_table_pos {
-            output.push_str("\nVersion 2+ fields:\n");
-            output.push_str(&format!("  Hi-Block Table: offset=0x{hi_pos:016X}\n"));
-            output.push_str(&format!(
-                "  Hash Table High: 0x{:04X}\n",
-                self.hash_table_pos_hi.unwrap_or(0)
-            ));
-            output.push_str(&format!(
-                "  Block Table High: 0x{:04X}\n",
-                self.block_table_pos_hi.unwrap_or(0)
-            ));
-        }
-
-        if let Some(size64) = self.archive_size_64 {
-            output.push_str("\nVersion 3+ fields:\n");
-            output.push_str(&format!(
-                "  Archive Size (64-bit): {}\n",
-                format_size(size64)
-            ));
-            output.push_str(&format!(
-                "  BET Table: offset=0x{:016X}\n",
-                self.bet_table_pos.unwrap_or(0)
-            ));
-            output.push_str(&format!(
-                "  HET Table: offset=0x{:016X}\n",
-                self.het_table_pos.unwrap_or(0)
-            ));
-        }
-
-        if let Some(ref v4) = self.v4_data {
-            output.push_str("\nVersion 4 fields:\n");
-            output.push_str(&format!(
-                "  Hash Table Size: {}\n",
-                format_size(v4.hash_table_size_64)
-            ));
-            output.push_str(&format!(
-                "  Block Table Size: {}\n",
-                format_size(v4.block_table_size_64)
-            ));
-            output.push_str(&format!(
-                "  Hi-Block Table Size: {}\n",
-                format_size(v4.hi_block_table_size_64)
-            ));
-            output.push_str(&format!(
-                "  HET Table Size: {}\n",
-                format_size(v4.het_table_size_64)
-            ));
-            output.push_str(&format!(
-                "  BET Table Size: {}\n",
-                format_size(v4.bet_table_size_64)
-            ));
-            output.push_str(&format!(
-                "  Raw Chunk Size: {}\n",
-                format_size(v4.raw_chunk_size as u64)
-            ));
-            output.push_str("  MD5 Hashes:\n");
-            output.push_str(&format!(
-                "    Block Table: {}\n",
-                hex_string(&v4.md5_block_table, 16)
-            ));
-            output.push_str(&format!(
-                "    Hash Table: {}\n",
-                hex_string(&v4.md5_hash_table, 16)
-            ));
-            output.push_str(&format!(
-                "    Hi-Block Table: {}\n",
-                hex_string(&v4.md5_hi_block_table, 16)
-            ));
-            output.push_str(&format!(
-                "    BET Table: {}\n",
-                hex_string(&v4.md5_bet_table, 16)
-            ));
-            output.push_str(&format!(
-                "    HET Table: {}\n",
-                hex_string(&v4.md5_het_table, 16)
-            ));
-            output.push_str(&format!(
-                "    MPQ Header: {}\n",
-                hex_string(&v4.md5_mpq_header, 16)
-            ));
-        }
-
-        output
+fn read_header<R: Read + Seek>(reader: &mut R) -> Result<MpqHeader> {
+    let header: MpqHeader = reader.wow_read()?;
+    if header.base.block_size > 23 {
+        return Err(Error::invalid_format(format!(
+            "Sector size shift {} is too large",
+            header.base.block_size
+        )));
     }
+    Ok(header)
 }
 
-impl UserDataHeader {
-    /// Debug dump the user data header
-    pub fn debug_dump(&self) -> String {
-        let mut output = String::new();
-        output.push_str("MPQ User Data Header\n");
-        output.push_str("===================\n");
-        output.push_str(&format!(
-            "User Data Size: {}\n",
-            format_size(self.user_data_size as u64)
-        ));
-        output.push_str(&format!("Header Offset: 0x{:08X}\n", self.header_offset));
-        output.push_str(&format!(
-            "User Data Header Size: {}\n",
-            self.user_data_header_size
-        ));
-        output
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn base(version: FormatVersion, header_size: u32) -> MpqHeaderV1 {
+        MpqHeaderV1 {
+            magic: MPQ_MAGIC,
+            header_size,
+            archive_size: 0x1000,
+            format_version: version,
+            block_size: 3,
+            hash_table_pos: 0x100,
+            block_table_pos: 0x200,
+            hash_table_size: 16,
+            block_table_size: 4,
+        }
+    }
+
+    fn no_ext() -> MpqHeaderExt {
+        MpqHeaderExt {
+            v2: SinceV2::None,
+            v3: SinceV3::None,
+            v4: SinceV4::None,
+        }
+    }
+
+    #[test]
+    fn every_version_round_trips_at_its_size() {
+        let v2 = MpqHeaderV2 {
+            hi_block_table_pos: 0x300,
+            hash_table_pos_hi: 1,
+            block_table_pos_hi: 2,
+        };
+        let v3 = MpqHeaderV3 {
+            archive_size_64: 0x1_0000_1000,
+            bet_table_pos: 0x400,
+            het_table_pos: 0x500,
+        };
+        let v4 = MpqHeaderV4 {
+            raw_chunk_size: 0x4000,
+            md5_hash_table: [7; 16],
+            ..Default::default()
+        };
+        let exts = [
+            (FormatVersion::V1, no_ext()),
+            (
+                FormatVersion::V2,
+                MpqHeaderExt {
+                    v2: SinceV2::Some(v2.clone()),
+                    ..no_ext()
+                },
+            ),
+            (
+                FormatVersion::V3,
+                MpqHeaderExt {
+                    v2: SinceV2::Some(v2.clone()),
+                    v3: SinceV3::Some(v3.clone()),
+                    v4: SinceV4::None,
+                },
+            ),
+            (
+                FormatVersion::V4,
+                MpqHeaderExt {
+                    v2: SinceV2::Some(v2),
+                    v3: SinceV3::Some(v3),
+                    v4: SinceV4::Some(v4),
+                },
+            ),
+        ];
+        for (version, ext) in exts {
+            let header = MpqHeader {
+                base: base(version, version.header_size()),
+                ext,
+            };
+            assert_eq!(header.wow_size(), version.header_size() as usize);
+            let mut bytes = Vec::new();
+            header.wow_write(&mut bytes).unwrap();
+            assert_eq!(bytes.len(), header.wow_size());
+            let read: MpqHeader = Cursor::new(bytes).wow_read().unwrap();
+            assert_eq!(read, header);
+        }
+    }
+
+    #[test]
+    fn positions_combine_their_high_bits() {
+        let header = MpqHeader {
+            base: base(FormatVersion::V2, 0x2C),
+            ext: MpqHeaderExt {
+                v2: SinceV2::Some(MpqHeaderV2 {
+                    hi_block_table_pos: 0,
+                    hash_table_pos_hi: 1,
+                    block_table_pos_hi: 2,
+                }),
+                ..no_ext()
+            },
+        };
+        assert_eq!(header.hash_table_pos(), 0x1_0000_0100);
+        assert_eq!(header.block_table_pos(), 0x2_0000_0200);
+        assert_eq!(header.hi_block_table_pos(), None);
+        assert_eq!(header.sector_size(), 4096);
+    }
+
+    #[test]
+    fn short_v3_headers_read_as_v2() {
+        let mut bytes = Vec::new();
+        base(FormatVersion::V3, 0x2C).wow_write(&mut bytes).unwrap();
+        MpqHeaderV2::default().wow_write(&mut bytes).unwrap();
+        let header: MpqHeader = Cursor::new(bytes).wow_read().unwrap();
+        assert!(header.v2().is_some());
+        assert!(header.v3().is_none());
+    }
+
+    #[test]
+    fn finds_the_header_after_user_data() {
+        let user = UserDataHeader {
+            magic: USER_DATA_MAGIC,
+            user_data_size: 0x200,
+            header_offset: 0x400,
+            user_data_header_size: 0x10,
+        };
+        let mut bytes = Vec::new();
+        user.wow_write(&mut bytes).unwrap();
+        bytes.resize(0x400, 0);
+        let header = MpqHeader {
+            base: base(FormatVersion::V1, 0x20),
+            ext: no_ext(),
+        };
+        header.wow_write(&mut bytes).unwrap();
+        let found = find_header(&mut Cursor::new(bytes)).unwrap();
+        assert_eq!(found.archive_offset, 0x400);
+        assert_eq!(found.user_data, Some(user));
+        assert_eq!(found.header, header);
     }
 }

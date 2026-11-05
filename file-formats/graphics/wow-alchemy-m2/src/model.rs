@@ -3,7 +3,7 @@ use std::io::{Cursor, SeekFrom};
 
 use wow_alchemy_data::error::Result as WDResult;
 use wow_alchemy_data::prelude::*;
-use wow_alchemy_data::types::{ChunkHeader, MagicStr, WowStructR};
+use wow_alchemy_data::types::{MagicStr, WowStructR};
 use wow_alchemy_data::utils::magic_to_string;
 
 use crate::chunks::{file_id, misc};
@@ -69,56 +69,27 @@ impl WowStructR for M2Model {
                 let mut chunks = Vec::new();
                 let mut chunk_index = HashMap::new();
 
-                while let Ok(chunk_header) = ChunkHeader::wow_read(reader) {
-                    let (chunk_magic, chunk_data): (&MagicStr, M2Chunk) = match chunk_header.magic {
-                        file_id::AFID => (
-                            &chunk_header.magic,
-                            M2Chunk::AFID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::SFID => (
-                            &chunk_header.magic,
-                            M2Chunk::SFID(file_id::SkinFiles::wow_read_from_chunk(
-                                reader,
-                                &chunk_header,
-                                &md20.header,
-                            )?),
-                        ),
-                        file_id::BFID => (
-                            &chunk_header.magic,
-                            M2Chunk::BFID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::GPID => (
-                            &chunk_header.magic,
-                            M2Chunk::GPID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::PFID => (
-                            &chunk_header.magic,
-                            M2Chunk::PFID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::RPID => (
-                            &chunk_header.magic,
-                            M2Chunk::RPID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::SKID => (
-                            &chunk_header.magic,
-                            M2Chunk::SKID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        file_id::TXID => (
-                            &chunk_header.magic,
-                            M2Chunk::TXID(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        misc::TXAC => (
-                            &chunk_header.magic,
-                            M2Chunk::TXAC(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
-                        _ => (
-                            &chunk_header.magic,
-                            M2Chunk::Unknown(reader.wow_read_from_chunk(&chunk_header)?),
-                        ),
+                read_chunks(reader, |reader, chunk_header| {
+                    let chunk = match chunk_header.magic {
+                        file_id::AFID => M2Chunk::AFID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::SFID => M2Chunk::SFID(file_id::SkinFiles::wow_read_from_chunk(
+                            reader,
+                            chunk_header,
+                            &md20.header,
+                        )?),
+                        file_id::BFID => M2Chunk::BFID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::GPID => M2Chunk::GPID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::PFID => M2Chunk::PFID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::RPID => M2Chunk::RPID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::SKID => M2Chunk::SKID(reader.wow_read_from_chunk(chunk_header)?),
+                        file_id::TXID => M2Chunk::TXID(reader.wow_read_from_chunk(chunk_header)?),
+                        misc::TXAC => M2Chunk::TXAC(reader.wow_read_from_chunk(chunk_header)?),
+                        _ => M2Chunk::Unknown(chunk_header.read_body(reader)?),
                     };
-                    chunks.push(chunk_data);
-                    chunk_index.insert(magic_to_string(chunk_magic), chunks.len() - 1);
-                }
+                    chunks.push(chunk);
+                    chunk_index.insert(magic_to_string(&chunk_header.magic), chunks.len() - 1);
+                    Ok(())
+                })?;
 
                 Ok(Self {
                     magic,

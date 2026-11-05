@@ -117,12 +117,9 @@ pub fn flatten_values(item: &[Value]) -> Vec<ToSqlOutput<'static>> {
     let mut params = Vec::<ToSqlOutput>::new();
     for ii in item {
         match ii {
-            crate::Value::Array(values) => {
+            Value::Array(values) => {
                 for j in values {
-                    match j {
-                        crate::Value::Array(_) => unreachable!(),
-                        _ => params.push(j.clone().into()),
-                    }
+                    params.push(j.clone().into());
                 }
             }
             _ => params.push(ii.clone().into()),
@@ -131,95 +128,86 @@ pub fn flatten_values(item: &[Value]) -> Vec<ToSqlOutput<'static>> {
     params
 }
 
-/// Convert all dbc files in a folder to a single SQLite database file
+/// Convert all dbc and db2 files in a folder to a single SQLite database file, one table each.
+/// Tables without a definition for the build, or that don't match theirs, are skipped with a
+/// message.
 pub fn convert_to_sqlite(
     game_build: GameBuild,
     source_dir: &Path,
     output_sqlite: &Path,
 ) -> Result<()> {
-    let root_dir = source_dir.read_dir()?;
+    let mut entries: Vec<_> = source_dir
+        .read_dir()?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            entry.path().is_file() && (name.ends_with(".dbc") || name.ends_with(".db2"))
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
 
     fs::remove_file(output_sqlite).ok();
 
     let mut conn = Connection::open(output_sqlite)?;
     conn.execute("PRAGMA foreign_keys = OFF;", [])?;
 
-    for dir_entry in root_dir {
-        let Ok(dir_entry) = dir_entry else { continue };
-        let filename: String = dir_entry.file_name().to_string_lossy().into();
-
+    for entry in entries {
+        let filename: String = entry.file_name().to_string_lossy().into();
         log::info!("Converting table: {filename:?}");
+
+        let wdb = match WdbFile::from_bytes(&fs::read(entry.path())?) {
+            Ok(wdb) => wdb,
+            Err(err) => {
+                println!("skipping {filename}: {err}");
+                continue;
+            }
+        };
+
         let dbd_file = match download_dbd(&filename) {
             Ok(dbd_file) => dbd_file,
             Err(err) => {
-                println!("skipping dbd file {:?} due to error {:?}", filename, err);
+                println!("skipping {filename}: no definition: {err}");
                 continue;
             }
         };
 
         let mut table_name: String = dbd_file.file_name().unwrap().to_string_lossy().into();
-        if let Some(idx) = table_name.find(".") {
+        if let Some(idx) = table_name.find('.') {
             table_name.truncate(idx);
         };
         table_name = table_name.to_lowercase();
 
         let dbd = match parse_dbd_file(&game_build, &dbd_file) {
             Ok(dbd) => dbd,
-            Err(err) => match err {
-                Error::NoFieldsForBuild => {
-                    println!("Error: {err}");
-                    continue;
-                }
-                _ => return Err(err),
-            },
+            Err(Error::NoFieldsForBuild) => {
+                println!("skipping {filename}: no definition for this build");
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
+
+        #[cfg(feature = "parallel")]
+        let records = wdb.read_records_parallel(&dbd);
+        #[cfg(not(feature = "parallel"))]
+        let records = wdb.read_records(&dbd);
+        let records = match records {
+            Ok(records) => records,
+            Err(err) => {
+                println!("skipping {filename}: {err}");
+                continue;
+            }
         };
 
         conn.execute(&make_table_definition(&dbd, &table_name)?, ())?;
-
-        let mut reader = fs::File::open(dir_entry.path())?;
-        let Ok(wdb) = WdbFile::wow_read(&mut reader) else {
-            println!("error parsing dbc file: {filename}");
-            continue;
-        };
-
         let insert_qr = make_insert_query(&dbd, &table_name)?;
 
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(&insert_qr)?;
-
-            #[cfg(feature = "parallel")]
-            {
-                for chunk in crate::lazy::process_parallel(&dir_entry.path(), &dbd, &wdb) {
-                    for (idx, values) in chunk.iter().enumerate() {
-                        match values {
-                            Ok(values) => {
-                                stmt.execute(params_from_iter(flatten_values(values)))?;
-                            }
-                            Err(err) => {
-                                println!("{table_name}: item {idx} parse failed: {err}");
-                            }
-                        }
-                    }
-                }
-            }
-
-            #[cfg(not(feature = "parallel"))]
-            {
-                let iter = crate::LazyRecordIterator::new(&mut reader, &dbd, &wdb)?;
-                for (idx, values) in iter.enumerate() {
-                    match values {
-                        Ok(values) => {
-                            stmt.execute(params_from_iter(flatten_values(&values)))?;
-                        }
-                        Err(err) => {
-                            println!("{table_name}: item {idx} parse failed: {err}");
-                        }
-                    }
-                }
+            for values in &records {
+                stmt.execute(params_from_iter(flatten_values(values)))?;
             }
         }
-
         tx.commit()?;
     }
 

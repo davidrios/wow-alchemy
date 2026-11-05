@@ -10,6 +10,8 @@ use crate::Result;
 
 use super::file_map::get_dbd_name;
 
+/// The WoWDBDefs definition of a table, as `AreaTable.dbc`, downloaded from GitHub into the
+/// user's cache the first time.
 pub fn download_dbd(file_name: &str) -> Result<PathBuf> {
     let dbd_file_name = get_dbd_name(file_name)?;
 
@@ -30,7 +32,8 @@ pub fn download_dbd(file_name: &str) -> Result<PathBuf> {
             "https://raw.githubusercontent.com/wowdev/WoWDBDefs/refs/heads/master/definitions/{}",
             dbd_file_name
         );
-        let response = reqwest::blocking::get(dbd_file_url)?;
+        // A missing file must not be cached as its 404 page.
+        let response = reqwest::blocking::get(dbd_file_url)?.error_for_status()?;
         let content = response.bytes()?;
 
         let mut downloaded_file = fs::File::create(&dbd_file_path)?;

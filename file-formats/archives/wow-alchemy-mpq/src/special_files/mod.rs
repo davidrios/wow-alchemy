@@ -1,9 +1,12 @@
-//! Special MPQ files handling: (listfile), (attributes), (signature), etc.
+//! The archive's own files: `(listfile)` and `(attributes)`.
 
 mod attributes;
-mod info;
 mod listfile;
 
-pub use attributes::{AttributeFlags, Attributes, FileAttributes};
-pub use info::{SpecialFileInfo, get_special_file_info};
-pub use listfile::parse_listfile;
+pub use attributes::{AttributeFlags, Attributes, AttributesHeader};
+pub use listfile::{build_listfile, parse_listfile};
+
+/// Name of the file listing the archive's files.
+pub const LISTFILE: &str = "(listfile)";
+/// Name of the file holding checksums and times of the archive's files.
+pub const ATTRIBUTES: &str = "(attributes)";
