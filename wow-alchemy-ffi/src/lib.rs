@@ -11,7 +11,7 @@ use std::ptr;
 use std::sync::{RwLock, RwLockReadGuard};
 
 use wow_alchemy_blp::convert::{blp_to_bc1_mipmaps, blp_to_image, rgba_to_bc1_mipmaps};
-use wow_alchemy_blp::load_blp_from_buf;
+use wow_alchemy_blp::{BlpFormat, BlpVersion, load_blp_from_buf};
 use wow_alchemy_cdbc::WdbFile;
 use wow_alchemy_mpq::PatchChain;
 
@@ -55,6 +55,29 @@ pub struct WaImage {
     pub height: u32,
     pub mip_count: u32,
 }
+
+/// How a BLP texture is stored, from its header.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaBlpInfo {
+    pub width: u32,
+    pub height: u32,
+    /// 0, 1 or 2: BLP0, BLP1 or BLP2.
+    pub version: u32,
+    /// One of the `WA_BLP_*` encodings.
+    pub encoding: u32,
+    /// 1, 3 or 5 for DXT1, DXT3 or DXT5, else 0.
+    pub dxt: u32,
+    /// Alpha bits per pixel the header gives.
+    pub alpha_bits: u32,
+    /// Mipmap levels the size and the mipmap flag call for.
+    pub mip_count: u32,
+}
+
+pub const WA_BLP_JPEG: u32 = 0;
+pub const WA_BLP_PALETTE: u32 = 1;
+pub const WA_BLP_DXT: u32 = 2;
+pub const WA_BLP_BGRA: u32 = 3;
 
 /// Reads share the lock, so threads read at once; only adding archives takes it alone.
 pub struct WaMpqChain(RwLock<PatchChain>);
@@ -253,6 +276,39 @@ pub unsafe extern "C" fn wa_blp_size(
     })
 }
 
+/// How a BLP texture is stored: its version, encoding and DXT kind, without decoding it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wa_blp_info(data: *const u8, len: usize, out: *mut WaBlpInfo) -> WaStatus {
+    guard(WaStatus::Error, || {
+        let bytes = unsafe { bytes_arg(data, len) }?;
+        let blp = load_blp_from_buf(bytes).map_err(|e| e.to_string())?;
+        let (encoding, dxt) = match blp.format().map_err(|e| e.to_string())? {
+            BlpFormat::Jpeg => (WA_BLP_JPEG, 0),
+            BlpFormat::Raw1 => (WA_BLP_PALETTE, 0),
+            BlpFormat::Raw3 => (WA_BLP_BGRA, 0),
+            BlpFormat::Dxt1 => (WA_BLP_DXT, 1),
+            BlpFormat::Dxt3 => (WA_BLP_DXT, 3),
+            BlpFormat::Dxt5 => (WA_BLP_DXT, 5),
+        };
+        let header = &blp.header;
+        let info = WaBlpInfo {
+            width: header.width,
+            height: header.height,
+            version: match header.version {
+                BlpVersion::Blp0 => 0,
+                BlpVersion::Blp1 => 1,
+                BlpVersion::Blp2 => 2,
+            },
+            encoding,
+            dxt,
+            alpha_bits: header.alpha_bits(),
+            mip_count: header.mipmap_levels() as u32,
+        };
+        unsafe { out.write(info) };
+        Ok(WaStatus::Ok)
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wa_blp_to_bc1(
     data: *const u8,
@@ -433,6 +489,44 @@ mod tests {
         let status = unsafe { wa_blp_decode(bytes.as_ptr(), bytes.len(), 0, image.as_mut_ptr()) };
         assert_eq!(status, WaStatus::Error);
         assert!(!wa_last_error().is_null());
+    }
+
+    /// A 4x4 BLP2 holding one DXT5 block, with no mipmaps.
+    fn dxt5_blp() -> Vec<u8> {
+        let mut data = b"BLP2".to_vec();
+        data.extend(1u32.to_le_bytes());
+        data.extend([2u8, 8, 7, 0]);
+        data.extend(4u32.to_le_bytes());
+        data.extend(4u32.to_le_bytes());
+        let offset = data.len() as u32 + 128 + 1024;
+        let mut offsets = [0u32; 16];
+        let mut sizes = [0u32; 16];
+        (offsets[0], sizes[0]) = (offset, 16);
+        offsets.iter().chain(&sizes).for_each(|v| data.extend(v.to_le_bytes()));
+        data.extend([0u8; 1024]);
+        data.extend([0u8; 16]);
+        data
+    }
+
+    #[test]
+    fn blp_info_reads_the_encoding() {
+        let bytes = dxt5_blp();
+        let mut info = std::mem::MaybeUninit::<WaBlpInfo>::uninit();
+        let status = unsafe { wa_blp_info(bytes.as_ptr(), bytes.len(), info.as_mut_ptr()) };
+        assert_eq!(status, WaStatus::Ok);
+        let info = unsafe { info.assume_init() };
+        assert_eq!(
+            info,
+            WaBlpInfo {
+                width: 4,
+                height: 4,
+                version: 2,
+                encoding: WA_BLP_DXT,
+                dxt: 5,
+                alpha_bits: 8,
+                mip_count: 1,
+            }
+        );
     }
 
     #[test]

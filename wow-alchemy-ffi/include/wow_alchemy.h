@@ -56,6 +56,26 @@ WaStatus wa_blp_decode(const uint8_t *data, size_t len, uint32_t mip_level, WaIm
 
 /* The size of a BLP texture's first mipmap. */
 WaStatus wa_blp_size(const uint8_t *data, size_t len, uint32_t *width, uint32_t *height);
+/* How a BLP texture is stored, from its header, without decoding it. */
+#define WA_BLP_JPEG 0
+#define WA_BLP_PALETTE 1
+#define WA_BLP_DXT 2
+#define WA_BLP_BGRA 3
+typedef struct WaBlpInfo {
+    uint32_t width;
+    uint32_t height;
+    /* 0, 1 or 2: BLP0, BLP1 or BLP2. */
+    uint32_t version;
+    /* One of the WA_BLP_ encodings. */
+    uint32_t encoding;
+    /* 1, 3 or 5 for DXT1, DXT3 or DXT5, else 0. */
+    uint32_t dxt;
+    /* Alpha bits per pixel the header gives. */
+    uint32_t alpha_bits;
+    /* Mipmap levels the size and the mipmap flag call for. */
+    uint32_t mip_count;
+} WaBlpInfo;
+WaStatus wa_blp_info(const uint8_t *data, size_t len, WaBlpInfo *out);
 /* Converts a BLP texture to a BC1 mipmap chain for a GPU, dropping alpha. size is
    the width and height of the first level, a power of two, and the levels run
    down to 1 pixel. Square DXT textures at least that wide convert without loss. */
