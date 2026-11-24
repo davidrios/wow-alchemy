@@ -25,6 +25,10 @@ use wow_alchemy_data_derive::{WowHeaderR, WowHeaderW};
 use wow_alchemy_utils::debug;
 
 use crate::alpha_map::{AlphaMapFormat, decode_alpha_map};
+use crate::mh2o::{
+    FORMAT_HEIGHT_AND_DEPTH, FORMAT_HEIGHT_AND_TEXTURE, FULL_DEPTH, LIQUID_CELLS_PER_SIDE,
+    LIQUID_VERTICES, LiquidLayer,
+};
 
 pub const MCVT: MagicStr = string_to_inverted_magic("MCVT");
 pub const MCCV: MagicStr = string_to_inverted_magic("MCCV");
@@ -507,6 +511,79 @@ impl WowHeaderW for McnkChunk {
     }
 }
 
+/// MCLQ's tile value, in the low 4 bits, for a cell without liquid.
+pub const MCLQ_NO_LIQUID: u8 = 0x0F;
+
+/// The flags that say which MCLQ layers a chunk has, in the order they're stored, with the row
+/// of LiquidType.dbc each is drawn as.
+const MCLQ_LAYER_TYPES: [(McnkFlags, u16); 4] = [
+    (McnkFlags::LQ_RIVER, 1),
+    (McnkFlags::LQ_OCEAN, 2),
+    (McnkFlags::LQ_MAGMA, 3),
+    (McnkFlags::LQ_SLIME, 4),
+];
+
+impl McnkChunk {
+    /// The chunk's MCLQ layers as [`LiquidLayer`]s, the same shape MH2O's take. `chunk` is the
+    /// chunk's index in its tile, Y index * 16 + X index. Each stored layer belongs to the next
+    /// liquid flag set on the chunk; a layer past the flags is read as water. Layers with no
+    /// cells are left out.
+    pub fn mclq_liquid_layers(&self, chunk: u16) -> Vec<LiquidLayer> {
+        let Some(stored) = &self.liquid else {
+            return Vec::new();
+        };
+        let mut types = MCLQ_LAYER_TYPES
+            .iter()
+            .filter(|(flag, _)| self.header.flags.contains(*flag))
+            .map(|&(_, liquid_type)| liquid_type);
+
+        stored
+            .iter()
+            .filter_map(|layer| {
+                let liquid_type = types.next().unwrap_or(1);
+                let cells = (0..LIQUID_CELLS_PER_SIDE * LIQUID_CELLS_PER_SIDE)
+                    .filter(|&cell| layer.tiles[cell] & 0x0F != MCLQ_NO_LIQUID)
+                    .fold(0u64, |cells, cell| cells | 1 << cell);
+                if cells == 0 {
+                    return None;
+                }
+
+                // Water keeps a depth in each vertex; magma and slime keep texture coordinates.
+                let water = liquid_type <= 2;
+                let (low, high) = (layer.min_height, layer.max_height);
+                let ordered = low.is_finite() && high.is_finite() && low <= high;
+                let heights = layer
+                    .vertices
+                    .iter()
+                    .map(|vertex| match vertex.height {
+                        h if !h.is_finite() => low,
+                        h if ordered => h.clamp(low, high),
+                        h => h,
+                    })
+                    .collect();
+                let depths = if water {
+                    layer.vertices.iter().map(MclqVertex::depth).collect()
+                } else {
+                    vec![FULL_DEPTH; LIQUID_VERTICES]
+                };
+
+                Some(LiquidLayer {
+                    chunk,
+                    liquid_type,
+                    vertex_format: if water {
+                        FORMAT_HEIGHT_AND_DEPTH
+                    } else {
+                        FORMAT_HEIGHT_AND_TEXTURE
+                    },
+                    cells,
+                    heights,
+                    depths,
+                })
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -660,5 +737,46 @@ mod tests {
     fn mclq_layers_are_804_bytes() {
         let layer = &sample().liquid.unwrap()[0];
         assert_eq!(layer.wow_size(), MCLQ_LAYER_BYTES);
+    }
+
+    #[test]
+    fn mclq_layers_become_liquid_layers_by_the_chunk_flags() {
+        let mut chunk = sample();
+        chunk.header.flags = McnkFlags::LQ_OCEAN | McnkFlags::LQ_MAGMA;
+        let mut ocean = chunk.liquid.as_ref().unwrap()[0].clone();
+        ocean.tiles[0] = 0x00;
+        ocean.tiles[9] = 0x84;
+        ocean.vertices[10] = MclqVertex {
+            data: [200, 0, 0, 0],
+            height: 1.5,
+        };
+        ocean.vertices[11].height = 9.0;
+        ocean.vertices[12].height = f32::NAN;
+        let mut magma = ocean.clone();
+        magma.tiles = [0x0F; 64];
+        magma.tiles[63] = 0x06;
+        let empty = chunk.liquid.as_ref().unwrap()[0].clone();
+        chunk.liquid = Some(vec![ocean, magma, empty]);
+
+        let layers = chunk.mclq_liquid_layers(17);
+        assert_eq!(layers.len(), 2);
+        let (ocean, magma) = (&layers[0], &layers[1]);
+        assert_eq!(
+            (ocean.chunk, ocean.liquid_type, ocean.vertex_format),
+            (17, 2, 0)
+        );
+        assert_eq!(ocean.cells, 1 | 1 << 9);
+        assert_eq!(ocean.depths[10], 200);
+        assert_eq!(&ocean.heights[10..13], &[1.5, 2.0, 1.0]);
+        assert_eq!((magma.liquid_type, magma.vertex_format), (3, 1));
+        assert_eq!(magma.cells, 1 << 63);
+        assert!(magma.depths.iter().all(|&d| d == 255));
+    }
+
+    #[test]
+    fn a_chunk_without_mclq_has_no_old_liquid() {
+        let mut chunk = sample();
+        chunk.liquid = None;
+        assert!(chunk.mclq_liquid_layers(0).is_empty());
     }
 }

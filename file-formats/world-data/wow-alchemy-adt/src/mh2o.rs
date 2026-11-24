@@ -33,12 +33,13 @@ pub const LIQUID_VERTICES_PER_SIDE: usize = LIQUID_CELLS_PER_SIDE + 1;
 pub const LIQUID_VERTICES: usize = LIQUID_VERTICES_PER_SIDE * LIQUID_VERTICES_PER_SIDE;
 
 const CHUNKS_PER_TILE: usize = 256;
-const FORMAT_HEIGHT_AND_TEXTURE: u16 = 1;
+pub(crate) const FORMAT_HEIGHT_AND_DEPTH: u16 = 0;
+pub(crate) const FORMAT_HEIGHT_AND_TEXTURE: u16 = 1;
 const FORMAT_DEPTH_ONLY: u16 = 2;
 const FORMAT_ALL: u16 = 3;
 const TEXTURE_COORDINATE_BYTES: usize = 4;
 /// How deep a layer with no depth data counts as, as a depth byte.
-const FULL_DEPTH: u8 = 255;
+pub(crate) const FULL_DEPTH: u8 = 255;
 
 /// One chunk's entry at the start of MH2O.
 #[derive(Debug, Clone, Default, PartialEq, WowHeaderR, WowHeaderW)]

@@ -215,12 +215,23 @@ impl Adt {
         name_index(&self.wmos, &self.wmo_offsets, name_id)
     }
 
-    /// Every MH2O liquid layer, on each chunk's 9x9 grid. None for tiles without MH2O.
+    /// Every liquid layer, on each chunk's 9x9 grid: MH2O's, and the older MCLQ's of chunks
+    /// that have none in MH2O, as some tiles (most of Outland's) keep their water only there.
     pub fn liquid_layers(&self) -> Result<Vec<LiquidLayer>> {
-        match &self.liquids {
-            Some(liquids) => liquids.liquid_layers(),
-            None => Ok(Vec::new()),
+        let mut layers = match &self.liquids {
+            Some(liquids) => liquids.liquid_layers()?,
+            None => Vec::new(),
+        };
+        let mut in_mh2o = [false; 256];
+        for layer in &layers {
+            in_mh2o[layer.chunk as usize] = true;
         }
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            if !in_mh2o.get(index).copied().unwrap_or(true) {
+                layers.extend(chunk.mclq_liquid_layers(index as u16));
+            }
+        }
+        Ok(layers)
     }
 }
 
