@@ -14,8 +14,7 @@ and conversion between them and images.
 
 ## License
 
-Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
-<http://www.apache.org/licenses/LICENSE-2.0>)
+Licensed under either of the [Apache License, Version 2.0](../../../LICENSE-APACHE) or the [MIT license](../../../LICENSE-MIT), at your option.
 
 ## Credits
 

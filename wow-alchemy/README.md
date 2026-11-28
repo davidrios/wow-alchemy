@@ -34,4 +34,4 @@ Every `info` command prints a summary, and `--detailed` prints every field read.
 
 ## License
 
-Apache-2.0
+Licensed under either of the [Apache License, Version 2.0](../LICENSE-APACHE) or the [MIT license](../LICENSE-MIT), at your option.
